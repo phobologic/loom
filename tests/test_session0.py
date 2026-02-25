@@ -348,10 +348,10 @@ class TestSession0OrganizerControls:
     async def test_move_prompt_up(self, client: AsyncClient) -> None:
         game_id, _ = await self._setup(client)
         prompts = await _get_prompts(game_id)
-        # prompt at order=1 (index 1) is pending — move it up
-        target = prompts[1]
+        # prompts[2] and prompts[1] are both pending — swap them
+        target = prompts[2]
         original_order = target.order
-        neighbor_order = prompts[0].order
+        neighbor_order = prompts[1].order
         response = await client.post(
             f"/games/{game_id}/session0/prompts/{target.id}/move",
             data={"direction": "up"},
@@ -360,27 +360,20 @@ class TestSession0OrganizerControls:
         assert response.status_code == 303
         updated = await _get_prompt(target.id)
         assert updated.order == neighbor_order
-        updated_neighbor = await _get_prompt(prompts[0].id)
+        updated_neighbor = await _get_prompt(prompts[1].id)
         assert updated_neighbor.order == original_order
 
-    async def test_move_first_prompt_up_is_noop(self, client: AsyncClient) -> None:
-        game_id, prompt_id = await self._setup(client)
+    async def test_cannot_move_pending_prompt_past_active(self, client: AsyncClient) -> None:
+        game_id, _ = await self._setup(client)
         prompts = await _get_prompts(game_id)
-        # The first prompt is 'active', can't be moved; use a pending one at order=1
+        # prompts[0] is active; moving prompts[1] up should be rejected
         target = prompts[1]
-        await client.post(
+        response = await client.post(
             f"/games/{game_id}/session0/prompts/{target.id}/move",
             data={"direction": "up"},
             follow_redirects=False,
         )
-        await client.post(
-            f"/games/{game_id}/session0/prompts/{target.id}/move",
-            data={"direction": "up"},
-            follow_redirects=False,
-        )
-        # After two up moves from order=1 we should be at boundary; order shouldn't go negative
-        updated = await _get_prompt(target.id)
-        assert updated.order >= 0
+        assert response.status_code == 403
 
     async def test_cannot_move_complete_prompt(self, client: AsyncClient) -> None:
         game_id, prompt_id = await self._setup(client)

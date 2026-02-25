@@ -77,7 +77,7 @@ def _all_done(prompts: list[Session0Prompt]) -> bool:
     return all(p.status in (PromptStatus.complete, PromptStatus.skipped) for p in prompts)
 
 
-async def _load_game_with_session0(game_id: int, db: AsyncSession) -> Game:
+async def _load_game_with_session0(game_id: int, db: AsyncSession) -> Game | None:
     """Load game with members and session0_prompts eagerly."""
     result = await db.execute(
         select(Game)
@@ -155,15 +155,9 @@ async def session0_index(
     # Find the active prompt
     active = next((p for p in prompts if p.status == PromptStatus.active), None)
     if active is None:
-        # Advance to first pending (handles return visit after all were completed)
+        # Redirect to first pending without mutating state, or last prompt if all done
         first_pending = next((p for p in prompts if p.status == PromptStatus.pending), None)
-        if first_pending:
-            first_pending.status = PromptStatus.active
-            await db.commit()
-            active = first_pending
-        else:
-            # All prompts done — redirect to last one
-            active = prompts[-1]
+        active = first_pending if first_pending else prompts[-1]
 
     return RedirectResponse(url=f"/games/{game_id}/session0/{active.id}", status_code=303)
 
@@ -344,6 +338,9 @@ async def accept_synthesis(
     if prompt is None:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
+    if prompt.synthesis is None:
+        raise HTTPException(status_code=400, detail="No synthesis to accept")
+
     prompt.synthesis_accepted = True
     prompt.status = PromptStatus.complete
 
@@ -480,9 +477,13 @@ async def move_prompt(
 
     if direction == "up" and idx > 0:
         neighbor = sorted_prompts[idx - 1]
+        if neighbor.status != PromptStatus.pending:
+            raise HTTPException(status_code=403, detail="Cannot swap with a non-pending prompt")
         target.order, neighbor.order = neighbor.order, target.order
     elif direction == "down" and idx < len(sorted_prompts) - 1:
         neighbor = sorted_prompts[idx + 1]
+        if neighbor.status != PromptStatus.pending:
+            raise HTTPException(status_code=403, detail="Cannot swap with a non-pending prompt")
         target.order, neighbor.order = neighbor.order, target.order
     # Boundary cases: no-op
 
