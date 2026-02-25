@@ -28,7 +28,7 @@ from loom.models import (
     WorldDocument,
 )
 from loom.rendering import templates
-from loom.voting import approval_threshold, is_approved
+from loom.voting import activate_act, approval_threshold, is_approved
 
 router = APIRouter()
 
@@ -72,10 +72,12 @@ async def _load_game_for_voting(game_id: int, db: AsyncSession) -> Game | None:
         .where(Game.id == game_id)
         .options(
             selectinload(Game.members),
+            selectinload(Game.acts),
             selectinload(Game.session0_prompts).selectinload(Session0Prompt.responses),
             selectinload(Game.world_document),
             selectinload(Game.proposals).selectinload(VoteProposal.votes).selectinload(Vote.voter),
             selectinload(Game.proposals).selectinload(VoteProposal.proposed_by),
+            selectinload(Game.proposals).selectinload(VoteProposal.act),
         )
     )
     return result.scalar_one_or_none()
@@ -278,7 +280,13 @@ async def cast_vote(
 
     if is_approved(yes_count, total_players):
         proposal.status = ProposalStatus.approved
-        game.status = GameStatus.active
+        if proposal.proposal_type in (ProposalType.world_doc_approval, ProposalType.ready_to_play):
+            game.status = GameStatus.active
+        elif proposal.proposal_type == ProposalType.act_proposal and proposal.act is not None:
+            activate_act(game.acts, proposal.act)
 
     await db.commit()
+
+    if proposal.proposal_type == ProposalType.act_proposal:
+        return RedirectResponse(url=f"/games/{game_id}/acts", status_code=303)
     return RedirectResponse(url=f"/games/{game_id}/world-document", status_code=303)

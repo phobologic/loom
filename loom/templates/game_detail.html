@@ -8,7 +8,7 @@
 
 <nav>
     <strong>Nav:</strong>
-    <a href="#" aria-disabled="true">Acts</a> |
+    <a href="/games/{{ game.id }}/acts">Acts</a> |
     {% if game.status.value != "setup" %}<a href="/games/{{ game.id }}/characters">Characters</a> | {% endif %}
     <a href="/games/{{ game.id }}/settings">Settings</a> |
     {% if game.status.value == "setup" %}<a href="/games/{{ game.id }}/session0">Session 0</a> | {% endif %}

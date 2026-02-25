@@ -125,6 +125,7 @@ class ProposalType(str, enum.Enum):
 
     world_doc_approval = "world_doc_approval"
     ready_to_play = "ready_to_play"
+    act_proposal = "act_proposal"
 
 
 class ProposalStatus(str, enum.Enum):
@@ -541,8 +542,13 @@ class VoteProposal(TimestampMixin, Base):
         Enum(ProposalStatus, native_enum=False), nullable=False, default=ProposalStatus.open
     )
 
+    act_id: Mapped[int | None] = mapped_column(
+        ForeignKey("acts.id", ondelete="SET NULL"), nullable=True
+    )
+
     game: Mapped[Game] = relationship(back_populates="proposals")
     proposed_by: Mapped[User | None] = relationship(foreign_keys=[proposed_by_id])
+    act: Mapped[Act | None] = relationship(foreign_keys=[act_id])
     votes: Mapped[list[Vote]] = relationship(
         back_populates="proposal",
         cascade="all, delete-orphan",

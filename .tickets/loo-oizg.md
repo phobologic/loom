@@ -1,6 +1,6 @@
 ---
 id: loo-oizg
-status: open
+status: closed
 deps: [loo-5s8p]
 links: []
 created: 2026-02-25T01:22:42Z
