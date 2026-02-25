@@ -96,6 +96,13 @@ class TieBreakingMethod(str, enum.Enum):
     challenger = "challenger"
 
 
+class OracleType(str, enum.Enum):
+    """Whether an oracle invocation is personal or world-affecting."""
+
+    personal = "personal"  # affects invoker's character only — invoker selects immediately
+    world = "world"  # affects shared fiction — collaborative discussion + selection
+
+
 class BeatSignificanceThreshold(str, enum.Enum):
     """How aggressively the system flags beats as major."""
 
@@ -426,7 +433,21 @@ class Event(TimestampMixin, Base):
     word_seed_action: Mapped[str | None] = mapped_column(String(100), nullable=True)
     word_seed_descriptor: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # Oracle discussion fields
+    oracle_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    oracle_selected_interpretation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     beat: Mapped[Beat] = relationship(back_populates="events")
+    oracle_interpretation_votes: Mapped[list[OracleInterpretationVote]] = relationship(
+        back_populates="event",
+        cascade="all, delete-orphan",
+        order_by="OracleInterpretationVote.created_at",
+    )
+    oracle_comments: Mapped[list[OracleComment]] = relationship(
+        back_populates="event",
+        cascade="all, delete-orphan",
+        order_by="OracleComment.created_at",
+    )
 
     @property
     def interpretations(self) -> list[str]:
@@ -597,6 +618,46 @@ class Vote(TimestampMixin, Base):
     voter: Mapped[User | None] = relationship()
 
     __table_args__ = (UniqueConstraint("proposal_id", "voter_id", name="uq_vote"),)
+
+
+class OracleInterpretationVote(TimestampMixin, Base):
+    """A player's vote for a particular oracle interpretation."""
+
+    __tablename__ = "oracle_interpretation_votes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"), nullable=False
+    )
+    voter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # 0-based index into event.interpretations; -1 means a custom alternative
+    interpretation_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    alternative_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    event: Mapped[Event] = relationship(back_populates="oracle_interpretation_votes")
+    voter: Mapped[User | None] = relationship()
+
+    __table_args__ = (UniqueConstraint("event_id", "voter_id", name="uq_oracle_vote"),)
+
+
+class OracleComment(TimestampMixin, Base):
+    """A player's comment on an oracle invocation."""
+
+    __tablename__ = "oracle_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"), nullable=False
+    )
+    author_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    event: Mapped[Event] = relationship(back_populates="oracle_comments")
+    author: Mapped[User | None] = relationship()
 
 
 class WordSeedTable(TimestampMixin, Base):

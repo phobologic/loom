@@ -27,6 +27,8 @@ from loom.models import (
     Game,
     GameMember,
     GameStatus,
+    OracleComment,
+    OracleInterpretationVote,
     ProposalStatus,
     ProposalType,
     Scene,
@@ -71,6 +73,14 @@ async def _load_scene_for_view(scene_id: int, db: AsyncSession) -> Scene | None:
             selectinload(Scene.characters_present),
             selectinload(Scene.beats).selectinload(Beat.author),
             selectinload(Scene.beats).selectinload(Beat.events),
+            selectinload(Scene.beats)
+            .selectinload(Beat.events)
+            .selectinload(Event.oracle_interpretation_votes)
+            .selectinload(OracleInterpretationVote.voter),
+            selectinload(Scene.beats)
+            .selectinload(Beat.events)
+            .selectinload(Event.oracle_comments)
+            .selectinload(OracleComment.author),
         )
     )
     return result.scalar_one_or_none()
@@ -129,6 +139,34 @@ async def _resolve_beat_proposals(
         my_votes[beat_id] = next((v for v in p.votes if v.voter_id == current_user_id), None)
 
     return beat_proposals, vote_counts, my_votes
+
+
+def _build_oracle_context(
+    scene: Scene, current_user_id: int
+) -> tuple[dict[int, dict[int, int]], dict[int, OracleInterpretationVote | None]]:
+    """Build per-event oracle vote counts and current-user vote lookup.
+
+    Returns:
+        oracle_vote_counts: {event_id: {interpretation_index: count}}
+        oracle_my_votes: {event_id: OracleInterpretationVote | None}
+    """
+    oracle_vote_counts: dict[int, dict[int, int]] = {}
+    oracle_my_votes: dict[int, OracleInterpretationVote | None] = {}
+
+    for beat in scene.beats:
+        for event in beat.events:
+            if event.type != EventType.oracle:
+                continue
+            counts: dict[int, int] = {}
+            for v in event.oracle_interpretation_votes:
+                counts[v.interpretation_index] = counts.get(v.interpretation_index, 0) + 1
+            oracle_vote_counts[event.id] = counts
+            oracle_my_votes[event.id] = next(
+                (v for v in event.oracle_interpretation_votes if v.voter_id == current_user_id),
+                None,
+            )
+
+    return oracle_vote_counts, oracle_my_votes
 
 
 async def _load_game_for_scenes(game_id: int, db: AsyncSession) -> Game | None:
@@ -342,6 +380,7 @@ async def scene_detail(
     beat_proposals, beat_vote_counts, beat_my_votes = await _resolve_beat_proposals(
         scene, current_user.id, db
     )
+    oracle_vote_counts, oracle_my_votes = _build_oracle_context(scene, current_user.id)
     now = datetime.now(timezone.utc)
 
     return templates.TemplateResponse(
@@ -356,6 +395,8 @@ async def scene_detail(
             "beat_proposals": beat_proposals,
             "beat_vote_counts": beat_vote_counts,
             "beat_my_votes": beat_my_votes,
+            "oracle_vote_counts": oracle_vote_counts,
+            "oracle_my_votes": oracle_my_votes,
             "current_user_id": current_user.id,
             "total_players": len(game.members),
             "now": now,
@@ -537,6 +578,7 @@ async def beats_partial(
     beat_proposals, beat_vote_counts, beat_my_votes = await _resolve_beat_proposals(
         scene, current_user.id, db
     )
+    oracle_vote_counts, oracle_my_votes = _build_oracle_context(scene, current_user.id)
     now = datetime.now(timezone.utc)
 
     return templates.TemplateResponse(
@@ -547,6 +589,8 @@ async def beats_partial(
             "beat_proposals": beat_proposals,
             "beat_vote_counts": beat_vote_counts,
             "beat_my_votes": beat_my_votes,
+            "oracle_vote_counts": oracle_vote_counts,
+            "oracle_my_votes": oracle_my_votes,
             "current_user_id": current_user.id,
             "game": scene.act.game,
             "act": scene.act,

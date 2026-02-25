@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import random as _random
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
@@ -23,10 +25,14 @@ from loom.models import (
     EventType,
     Game,
     GameMember,
+    OracleComment,
+    OracleInterpretationVote,
+    OracleType,
     ProposalStatus,
     ProposalType,
     Scene,
     SceneStatus,
+    TieBreakingMethod,
     User,
     Vote,
     VoteChoice,
@@ -115,6 +121,7 @@ async def invoke_oracle(
     word_action: str = Form(...),
     word_descriptor: str = Form(...),
     beat_significance: str = Form(default="minor"),
+    oracle_type: str = Form(default="world"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -139,6 +146,10 @@ async def invoke_oracle(
     if beat_significance not in (BeatSignificance.minor.value, BeatSignificance.major.value):
         raise HTTPException(status_code=422, detail="Invalid beat significance")
 
+    oracle_type = oracle_type.strip().lower()
+    if oracle_type not in (OracleType.personal.value, OracleType.world.value):
+        oracle_type = OracleType.world.value
+
     significance = BeatSignificance(beat_significance)
     status = BeatStatus.canon if significance == BeatSignificance.minor else BeatStatus.proposed
 
@@ -161,6 +172,7 @@ async def invoke_oracle(
         beat_id=beat.id,
         type=EventType.oracle,
         oracle_query=question.strip(),
+        oracle_type=oracle_type,
         word_seed_action=word_action.strip() or None,
         word_seed_descriptor=word_descriptor.strip() or None,
         order=1,
@@ -191,3 +203,179 @@ async def invoke_oracle(
         url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}",
         status_code=303,
     )
+
+
+async def _load_oracle_event(event_id: int, game_id: int, db: AsyncSession) -> Event | None:
+    """Load an oracle Event with its beat, game membership, votes, and comments."""
+    result = await db.execute(
+        select(Event)
+        .where(Event.id == event_id)
+        .options(
+            selectinload(Event.beat)
+            .selectinload(Beat.scene)
+            .selectinload(Scene.act)
+            .selectinload(Act.game)
+            .selectinload(Game.members),
+            selectinload(Event.oracle_interpretation_votes).selectinload(
+                OracleInterpretationVote.voter
+            ),
+            selectinload(Event.oracle_comments).selectinload(OracleComment.author),
+        )
+    )
+    event = result.scalar_one_or_none()
+    if event is None:
+        return None
+    if event.beat.scene.act.game.id != game_id:
+        return None
+    return event
+
+
+def _scene_redirect(event: Event) -> str:
+    """Return the scene URL for an oracle event."""
+    beat = event.beat
+    scene = beat.scene
+    act = scene.act
+    game = act.game
+    return f"/games/{game.id}/acts/{act.id}/scenes/{scene.id}"
+
+
+@router.post("/games/{game_id}/oracle/events/{event_id}/vote", response_class=RedirectResponse)
+async def vote_on_interpretation(
+    game_id: int,
+    event_id: int,
+    interpretation_index: int = Form(...),
+    alternative_text: str = Form(""),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Cast a vote for an oracle interpretation (or propose a custom alternative)."""
+    event = await _load_oracle_event(event_id, game_id, db)
+    if event is None or event.type != EventType.oracle:
+        raise HTTPException(status_code=404, detail="Oracle event not found")
+
+    game = event.beat.scene.act.game
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if event.oracle_selected_interpretation is not None:
+        raise HTTPException(status_code=403, detail="Oracle has already been resolved")
+
+    alt = alternative_text.strip()
+    if interpretation_index == -1 and not alt:
+        raise HTTPException(status_code=422, detail="Alternative text is required for custom vote")
+    if interpretation_index != -1:
+        if interpretation_index < 0 or interpretation_index >= len(event.interpretations):
+            raise HTTPException(status_code=422, detail="Invalid interpretation index")
+
+    vote = OracleInterpretationVote(
+        event_id=event_id,
+        voter_id=current_user.id,
+        interpretation_index=interpretation_index,
+        alternative_text=alt if interpretation_index == -1 else None,
+    )
+    db.add(vote)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="You have already voted on this oracle")
+
+    await db.commit()
+    return RedirectResponse(url=_scene_redirect(event), status_code=303)
+
+
+@router.post("/games/{game_id}/oracle/events/{event_id}/comment", response_class=RedirectResponse)
+async def comment_on_oracle(
+    game_id: int,
+    event_id: int,
+    text: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Add a comment to an oracle invocation."""
+    event = await _load_oracle_event(event_id, game_id, db)
+    if event is None or event.type != EventType.oracle:
+        raise HTTPException(status_code=404, detail="Oracle event not found")
+
+    game = event.beat.scene.act.game
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if event.oracle_selected_interpretation is not None:
+        raise HTTPException(status_code=403, detail="Oracle has already been resolved")
+
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="Comment text is required")
+
+    db.add(OracleComment(event_id=event_id, author_id=current_user.id, text=text.strip()))
+    await db.commit()
+    return RedirectResponse(url=_scene_redirect(event), status_code=303)
+
+
+@router.post("/games/{game_id}/oracle/events/{event_id}/select", response_class=RedirectResponse)
+async def select_interpretation(
+    game_id: int,
+    event_id: int,
+    interpretation_index: int = Form(...),
+    alternative_text: str = Form(""),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Invoker selects the final oracle interpretation.
+
+    Pass interpretation_index=-2 to auto-resolve using the game's tie-breaking method.
+    Pass interpretation_index=-1 with alternative_text for a custom selection.
+    Pass interpretation_index=0..N to select a generated interpretation by index.
+    """
+    event = await _load_oracle_event(event_id, game_id, db)
+    if event is None or event.type != EventType.oracle:
+        raise HTTPException(status_code=404, detail="Oracle event not found")
+
+    if event.beat.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the oracle invoker can select")
+
+    if event.oracle_selected_interpretation is not None:
+        raise HTTPException(status_code=403, detail="Oracle has already been resolved")
+
+    game = event.beat.scene.act.game
+
+    # interpretation_index == -2 → apply tie-breaking from vote tallies
+    if interpretation_index == -2:
+        votes = event.oracle_interpretation_votes
+        if not votes:
+            raise HTTPException(status_code=422, detail="No votes to resolve tie from")
+
+        counts: dict[int, int] = {}
+        for v in votes:
+            counts[v.interpretation_index] = counts.get(v.interpretation_index, 0) + 1
+
+        max_count = max(counts.values())
+        tied = [idx for idx, cnt in counts.items() if cnt == max_count]
+
+        if game.tie_breaking_method == TieBreakingMethod.proposer and len(tied) == 1:
+            winner_idx = tied[0]
+        else:
+            # random and challenger both use random selection among tied options
+            winner_idx = _random.choice(tied)
+
+        if winner_idx == -1:
+            # find the most-voted alternative text
+            alt_votes = [v for v in votes if v.interpretation_index == -1]
+            selected_text = alt_votes[0].alternative_text or ""
+        else:
+            selected_text = event.interpretations[winner_idx]
+
+    elif interpretation_index == -1:
+        alt = alternative_text.strip()
+        if not alt:
+            raise HTTPException(status_code=422, detail="Alternative text is required")
+        selected_text = alt
+
+    else:
+        if interpretation_index < 0 or interpretation_index >= len(event.interpretations):
+            raise HTTPException(status_code=422, detail="Invalid interpretation index")
+        selected_text = event.interpretations[interpretation_index]
+
+    event.oracle_selected_interpretation = selected_text
+    await db.commit()
+    return RedirectResponse(url=_scene_redirect(event), status_code=303)

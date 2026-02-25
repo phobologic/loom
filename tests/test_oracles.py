@@ -21,9 +21,13 @@ from loom.models import (
     GameMember,
     GameStatus,
     MemberRole,
+    OracleComment,
+    OracleInterpretationVote,
+    OracleType,
     ProposalType,
     Scene,
     SceneStatus,
+    User,
     VoteProposal,
 )
 
@@ -229,3 +233,249 @@ async def test_oracle_post_major_creates_proposal(client: AsyncClient) -> None:
         )
         proposals = result.scalars().all()
         assert len(proposals) == 1
+
+
+async def _invoke_oracle(
+    client: AsyncClient,
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    oracle_type: str = "world",
+) -> int:
+    """Helper: invoke oracle and return the created event_id."""
+    await client.post(
+        f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/oracle",
+        data={
+            "question": "What does fate hold?",
+            "word_action": "reveal",
+            "word_descriptor": "shadow",
+            "beat_significance": "minor",
+            "oracle_type": oracle_type,
+        },
+        follow_redirects=False,
+    )
+    async with _test_session_factory() as db:
+        result = await db.execute(
+            select(Event).where(Event.type == EventType.oracle).options(selectinload(Event.beat))
+        )
+        event = result.scalars().first()
+        assert event is not None
+        return event.id
+
+
+@pytest.mark.asyncio
+async def test_oracle_post_stores_oracle_type(client: AsyncClient) -> None:
+    game_id = await _create_active_game(client)
+    act_id, scene_id = await _create_active_scene(game_id)
+
+    await _login(client, 1)
+    await client.post(
+        f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/oracle",
+        data={
+            "question": "Personal question",
+            "word_action": "seek",
+            "word_descriptor": "truth",
+            "beat_significance": "minor",
+            "oracle_type": "personal",
+        },
+        follow_redirects=False,
+    )
+
+    async with _test_session_factory() as db:
+        result = await db.execute(select(Event).where(Event.type == EventType.oracle))
+        event = result.scalar_one()
+        assert event.oracle_type == OracleType.personal.value
+        assert event.oracle_selected_interpretation is None
+
+
+@pytest.mark.asyncio
+async def test_vote_on_interpretation(client: AsyncClient) -> None:
+    game_id = await _create_active_game(client)
+    act_id, scene_id = await _create_active_scene(game_id)
+
+    await _login(client, 1)
+    event_id = await _invoke_oracle(client, game_id, act_id, scene_id)
+
+    r = await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/vote",
+        data={"interpretation_index": "0"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    async with _test_session_factory() as db:
+        result = await db.execute(
+            select(OracleInterpretationVote).where(OracleInterpretationVote.event_id == event_id)
+        )
+        votes = result.scalars().all()
+        assert len(votes) == 1
+        assert votes[0].interpretation_index == 0
+
+
+@pytest.mark.asyncio
+async def test_vote_custom_alternative(client: AsyncClient) -> None:
+    game_id = await _create_active_game(client)
+    act_id, scene_id = await _create_active_scene(game_id)
+
+    await _login(client, 1)
+    event_id = await _invoke_oracle(client, game_id, act_id, scene_id)
+
+    r = await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/vote",
+        data={"interpretation_index": "-1", "alternative_text": "My custom interpretation"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    async with _test_session_factory() as db:
+        result = await db.execute(
+            select(OracleInterpretationVote).where(OracleInterpretationVote.event_id == event_id)
+        )
+        vote = result.scalar_one()
+        assert vote.interpretation_index == -1
+        assert vote.alternative_text == "My custom interpretation"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_vote_rejected(client: AsyncClient) -> None:
+    game_id = await _create_active_game(client)
+    act_id, scene_id = await _create_active_scene(game_id)
+
+    await _login(client, 1)
+    event_id = await _invoke_oracle(client, game_id, act_id, scene_id)
+
+    await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/vote",
+        data={"interpretation_index": "0"},
+        follow_redirects=False,
+    )
+    r = await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/vote",
+        data={"interpretation_index": "1"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_comment_on_oracle(client: AsyncClient) -> None:
+    game_id = await _create_active_game(client)
+    act_id, scene_id = await _create_active_scene(game_id)
+
+    await _login(client, 1)
+    event_id = await _invoke_oracle(client, game_id, act_id, scene_id)
+
+    r = await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/comment",
+        data={"text": "I think option 2 fits best"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    async with _test_session_factory() as db:
+        result = await db.execute(select(OracleComment).where(OracleComment.event_id == event_id))
+        comments = result.scalars().all()
+        assert len(comments) == 1
+        assert comments[0].text == "I think option 2 fits best"
+
+
+@pytest.mark.asyncio
+async def test_invoker_selects_interpretation(client: AsyncClient) -> None:
+    game_id = await _create_active_game(client)
+    act_id, scene_id = await _create_active_scene(game_id)
+
+    await _login(client, 1)
+    event_id = await _invoke_oracle(client, game_id, act_id, scene_id)
+
+    r = await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/select",
+        data={"interpretation_index": "1"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    async with _test_session_factory() as db:
+        result = await db.execute(select(Event).where(Event.id == event_id))
+        event = result.scalar_one()
+        assert event.oracle_selected_interpretation is not None
+
+
+@pytest.mark.asyncio
+async def test_non_invoker_cannot_select(client: AsyncClient) -> None:
+    game_id = await _create_active_game(client)
+    act_id, scene_id = await _create_active_scene(game_id)
+
+    # User 1 invokes; user 2 tries to select
+    await _login(client, 1)
+    event_id = await _invoke_oracle(client, game_id, act_id, scene_id)
+
+    # Add user 2 to game so the membership check passes
+    async with _test_session_factory() as db:
+        result = await db.execute(select(User).where(User.display_name == "Bob"))
+        bob = result.scalar_one()
+        result2 = await db.execute(select(Game).where(Game.id == game_id))
+        game = result2.scalar_one()
+        db.add(GameMember(game_id=game.id, user_id=bob.id, role=MemberRole.player))
+        await db.commit()
+
+    await _login(client, bob.id)
+    r = await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/select",
+        data={"interpretation_index": "0"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_cannot_vote_after_selection(client: AsyncClient) -> None:
+    game_id = await _create_active_game(client)
+    act_id, scene_id = await _create_active_scene(game_id)
+
+    await _login(client, 1)
+    event_id = await _invoke_oracle(client, game_id, act_id, scene_id)
+
+    # Invoker selects
+    await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/select",
+        data={"interpretation_index": "0"},
+        follow_redirects=False,
+    )
+
+    # Voting after selection should fail
+    r = await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/vote",
+        data={"interpretation_index": "1"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_tiebreak_selects_from_votes(client: AsyncClient) -> None:
+    game_id = await _create_active_game(client)
+    act_id, scene_id = await _create_active_scene(game_id)
+
+    await _login(client, 1)
+    event_id = await _invoke_oracle(client, game_id, act_id, scene_id)
+
+    # Cast a vote for interpretation 2
+    await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/vote",
+        data={"interpretation_index": "2"},
+        follow_redirects=False,
+    )
+
+    # Invoker uses tie-breaking to resolve
+    r = await client.post(
+        f"/games/{game_id}/oracle/events/{event_id}/select",
+        data={"interpretation_index": "-2"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    async with _test_session_factory() as db:
+        result = await db.execute(select(Event).where(Event.id == event_id))
+        event = result.scalar_one()
+        # Should have selected interpretation #2 (index 2)
+        assert event.oracle_selected_interpretation is not None

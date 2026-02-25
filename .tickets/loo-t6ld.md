@@ -1,6 +1,6 @@
 ---
 id: loo-t6ld
-status: open
+status: closed
 deps: [loo-j8vl]
 links: []
 created: 2026-02-25T01:22:43Z

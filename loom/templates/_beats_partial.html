@@ -24,13 +24,157 @@
       </p>
       {% elif event.type.value == "oracle" %}
       <p style="margin:0.2rem 0 0;"><em>{{ event.oracle_query }}</em></p>
-      {% if event.interpretations %}
-      <ul style="margin:0.25rem 0 0; padding-left:1.2rem;">
-        {% for interp in event.interpretations %}
-        <li>{{ interp }}</li>
-        {% endfor %}
-      </ul>
+      {% if event.oracle_type == 'personal' %}
+      <p style="font-size:0.8rem; color:#888; margin:0.1rem 0 0;">Personal oracle</p>
       {% endif %}
+      {# Show selected interpretation highlighted, or full list for open discussion #}
+      {% if event.oracle_selected_interpretation %}
+      <div style="margin:0.4rem 0 0; padding:0.5rem 0.75rem; background:#e8f5e9; border:1px solid #4caf50; border-radius:4px;">
+        <span style="font-size:0.75rem; color:#2e7d32; font-weight:bold; text-transform:uppercase; letter-spacing:0.04em;">Selected</span>
+        <p style="margin:0.2rem 0 0;">{{ event.oracle_selected_interpretation }}</p>
+      </div>
+      {% elif event.interpretations %}
+      <ol style="margin:0.25rem 0 0; padding-left:1.4rem;">
+        {% for interp in event.interpretations %}
+        <li style="margin-bottom:0.2rem;">{{ interp }}</li>
+        {% endfor %}
+      </ol>
+      {% endif %}
+      {# Oracle discussion panel (shown while unresolved) #}
+      {% if not event.oracle_selected_interpretation and event.interpretations %}
+      {% set oracle_vc = oracle_vote_counts.get(event.id, {}) if oracle_vote_counts is defined else {} %}
+      {% set oracle_my_vote = oracle_my_votes.get(event.id) if oracle_my_votes is defined else None %}
+      {% set is_invoker = (current_user_id is defined and beat.author_id == current_user_id) %}
+      <div style="margin-top:0.75rem; padding:0.6rem 0.75rem; border:1px solid #c4a000; border-radius:4px; background:#fffdf0;">
+        <p style="margin:0 0 0.4rem; font-size:0.85rem; font-weight:bold; color:#7a5c00;">
+          Oracle &mdash; awaiting selection
+          {% if event.oracle_type == 'personal' %}(personal){% endif %}
+        </p>
+
+        {# World oracle: show vote tallies and vote form for non-invokers #}
+        {% if event.oracle_type != 'personal' %}
+        {% if oracle_vc %}
+        <p style="font-size:0.82rem; color:#555; margin:0 0 0.35rem;">
+          Votes:
+          {% for idx in range(event.interpretations | length) %}
+          #{{ idx + 1 }}: {{ oracle_vc.get(idx, 0) }}{% if not loop.last %} &middot; {% endif %}
+          {% endfor %}
+          {% if oracle_vc.get(-1, 0) %}&middot; alt: {{ oracle_vc.get(-1, 0) }}{% endif %}
+        </p>
+        {% endif %}
+
+        {# Vote history #}
+        {% set all_votes = event.oracle_interpretation_votes if event.oracle_interpretation_votes is defined else [] %}
+        {% if all_votes %}
+        <ul style="margin:0 0 0.4rem; padding-left:1.2rem; font-size:0.82rem;">
+          {% for v in all_votes %}
+          <li>
+            <strong>{{ v.voter.display_name if v.voter else "Anonymous" }}:</strong>
+            {% if v.interpretation_index == -1 %}
+            proposes alternative &mdash; <em>{{ v.alternative_text }}</em>
+            {% else %}
+            option #{{ v.interpretation_index + 1 }}
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        {# Vote form for non-invoker who hasn't voted yet #}
+        {% if not is_invoker %}
+          {% if not oracle_my_vote %}
+          <form method="post" action="/games/{{ game.id }}/oracle/events/{{ event.id }}/vote" style="margin-top:0.35rem;">
+            <fieldset style="border:none; padding:0; margin:0;">
+              <div style="font-size:0.82rem; color:#555; margin-bottom:0.3rem;">Vote for your preferred interpretation:</div>
+              {% for interp in event.interpretations %}
+              <label style="display:block; margin:0.15rem 0; font-size:0.83rem;">
+                <input type="radio" name="interpretation_index" value="{{ loop.index0 }}" required>
+                #{{ loop.index }} &mdash; {{ interp }}
+              </label>
+              {% endfor %}
+              <label style="display:block; margin:0.35rem 0 0.1rem; font-size:0.83rem;">
+                <input type="radio" name="interpretation_index" value="-1">
+                Propose alternative:
+              </label>
+              <textarea name="alternative_text" rows="2"
+                style="width:100%; max-width:32rem; font-size:0.82rem; margin-top:0.15rem;"
+                placeholder="Describe your alternative interpretation"></textarea>
+              <button type="submit" style="margin-top:0.35rem; font-size:0.83rem;">Submit vote</button>
+            </fieldset>
+          </form>
+          {% else %}
+          <p style="font-size:0.83rem; margin:0 0 0.3rem;">
+            Your vote:
+            {% if oracle_my_vote.interpretation_index == -1 %}
+            <strong>alternative</strong> &mdash; <em>{{ oracle_my_vote.alternative_text }}</em>
+            {% else %}
+            <strong>option #{{ oracle_my_vote.interpretation_index + 1 }}</strong>
+            {% endif %}
+          </p>
+          {% endif %}
+        {% endif %}
+        {% endif %}{# end world oracle vote section #}
+
+        {# Comment thread #}
+        {% set oracle_coms = event.oracle_comments if event.oracle_comments is defined else [] %}
+        {% if oracle_coms %}
+        <div style="margin-top:0.5rem; border-top:1px solid #e0d080; padding-top:0.4rem;">
+          <div style="font-size:0.78rem; color:#888; margin-bottom:0.25rem; text-transform:uppercase; letter-spacing:0.04em;">Comments</div>
+          <ul style="margin:0; padding-left:1.1rem; font-size:0.82rem;">
+            {% for c in oracle_coms %}
+            <li style="margin-bottom:0.2rem;">
+              <strong>{{ c.author.display_name if c.author else "Anonymous" }}:</strong> {{ c.text }}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {# Comment form (all members) #}
+        <form method="post" action="/games/{{ game.id }}/oracle/events/{{ event.id }}/comment" style="margin-top:0.4rem; border-top:1px solid #e0d080; padding-top:0.4rem;">
+          <input type="text" name="text" placeholder="Add a comment…"
+            style="width:100%; max-width:28rem; font-size:0.82rem;" required>
+          <button type="submit" style="font-size:0.82rem; margin-top:0.2rem;">Comment</button>
+        </form>
+
+        {# Invoker selection panel #}
+        {% if is_invoker %}
+        <div style="margin-top:0.6rem; border-top:1px solid #e0d080; padding-top:0.5rem;">
+          <div style="font-size:0.83rem; font-weight:bold; color:#7a5c00; margin-bottom:0.35rem;">Select interpretation</div>
+          {% for interp in event.interpretations %}
+          <form method="post" action="/games/{{ game.id }}/oracle/events/{{ event.id }}/select"
+              style="margin-bottom:0.3rem; display:flex; align-items:baseline; gap:0.5rem;">
+            <input type="hidden" name="interpretation_index" value="{{ loop.index0 }}">
+            <button type="submit" style="font-size:0.8rem; white-space:nowrap;">Select #{{ loop.index }}</button>
+            <span style="font-size:0.83rem;">{{ interp }}</span>
+          </form>
+          {% endfor %}
+          {# Custom selection #}
+          <form method="post" action="/games/{{ game.id }}/oracle/events/{{ event.id }}/select"
+              style="margin-top:0.3rem;">
+            <input type="hidden" name="interpretation_index" value="-1">
+            <div style="font-size:0.82rem; color:#555; margin-bottom:0.2rem;">Or select a custom interpretation:</div>
+            <textarea name="alternative_text" rows="2"
+              style="width:100%; max-width:32rem; font-size:0.82rem;"
+              placeholder="Type the chosen interpretation text…"></textarea>
+            <button type="submit" style="font-size:0.8rem; margin-top:0.25rem;">Select custom</button>
+          </form>
+          {# Tie-break auto-resolve (only meaningful if there are votes) #}
+          {% set total_votes = event.oracle_interpretation_votes | length if event.oracle_interpretation_votes is defined else 0 %}
+          {% if total_votes > 0 %}
+          <form method="post" action="/games/{{ game.id }}/oracle/events/{{ event.id }}/select"
+              style="margin-top:0.4rem;">
+            <input type="hidden" name="interpretation_index" value="-2">
+            <button type="submit" style="font-size:0.8rem; background:#f0e8c0; border:1px solid #c4a000;">
+              &#9861; Let fate decide (apply tie-breaking)
+            </button>
+          </form>
+          {% endif %}
+        </div>
+        {% endif %}
+
+      </div>
+      {% endif %}{# end unresolved oracle discussion #}
       {% elif event.type.value == "fortune_roll" %}
       <p style="margin:0.2rem 0 0;">
         Odds: {{ event.fortune_roll_odds }} &rarr; <strong>{{ event.fortune_roll_result }}</strong>
