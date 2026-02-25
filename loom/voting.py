@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from loom.models import Act
+    from loom.models import Act, Scene
 
 
 def approval_threshold(total_players: int) -> float:
@@ -31,3 +31,18 @@ def activate_act(acts: list[Act], new_act: Act) -> None:
         if act.status == ActStatus.active:
             act.status = ActStatus.complete
     new_act.status = ActStatus.active
+
+
+def activate_scene(scenes: list[Scene], new_scene: Scene) -> None:
+    """Complete any currently active scene and set new_scene to active.
+
+    Args:
+        scenes: All scenes for the act (used to find and complete the current active scene).
+        new_scene: The scene being activated.
+    """
+    from loom.models import SceneStatus
+
+    for scene in scenes:
+        if scene.status == SceneStatus.active:
+            scene.status = SceneStatus.complete
+    new_scene.status = SceneStatus.active

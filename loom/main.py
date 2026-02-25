@@ -23,6 +23,7 @@ from loom.routers import (
     games,
     pages,
     safety_tools,
+    scenes,
     session0,
     world_document,
 )
@@ -65,6 +66,7 @@ app.include_router(session0.router)
 app.include_router(safety_tools.router)
 app.include_router(world_document.router)
 app.include_router(characters.router)
+app.include_router(scenes.router)
 
 
 @app.exception_handler(_AuthRedirect)

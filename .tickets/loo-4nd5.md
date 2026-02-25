@@ -1,6 +1,6 @@
 ---
 id: loo-4nd5
-status: open
+status: closed
 deps: [loo-oizg]
 links: []
 created: 2026-02-25T01:22:42Z

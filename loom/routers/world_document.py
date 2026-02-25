@@ -13,12 +13,14 @@ from loom.ai.stubs import generate_world_document as _stub_generate
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
+    Act,
     Game,
     GameMember,
     GameStatus,
     MemberRole,
     ProposalStatus,
     ProposalType,
+    Scene,
     Session0Prompt,
     Session0Response,
     User,
@@ -28,7 +30,7 @@ from loom.models import (
     WorldDocument,
 )
 from loom.rendering import templates
-from loom.voting import activate_act, approval_threshold, is_approved
+from loom.voting import activate_act, activate_scene, approval_threshold, is_approved
 
 router = APIRouter()
 
@@ -72,12 +74,13 @@ async def _load_game_for_voting(game_id: int, db: AsyncSession) -> Game | None:
         .where(Game.id == game_id)
         .options(
             selectinload(Game.members),
-            selectinload(Game.acts),
+            selectinload(Game.acts).selectinload(Act.scenes),
             selectinload(Game.session0_prompts).selectinload(Session0Prompt.responses),
             selectinload(Game.world_document),
             selectinload(Game.proposals).selectinload(VoteProposal.votes).selectinload(Vote.voter),
             selectinload(Game.proposals).selectinload(VoteProposal.proposed_by),
             selectinload(Game.proposals).selectinload(VoteProposal.act),
+            selectinload(Game.proposals).selectinload(VoteProposal.scene),
         )
     )
     return result.scalar_one_or_none()
@@ -284,9 +287,17 @@ async def cast_vote(
             game.status = GameStatus.active
         elif proposal.proposal_type == ProposalType.act_proposal and proposal.act is not None:
             activate_act(game.acts, proposal.act)
+        elif proposal.proposal_type == ProposalType.scene_proposal and proposal.scene is not None:
+            act = next((a for a in game.acts if a.id == proposal.scene.act_id), None)
+            if act is not None:
+                activate_scene(act.scenes, proposal.scene)
 
     await db.commit()
 
     if proposal.proposal_type == ProposalType.act_proposal:
         return RedirectResponse(url=f"/games/{game_id}/acts", status_code=303)
+    if proposal.proposal_type == ProposalType.scene_proposal and proposal.scene is not None:
+        return RedirectResponse(
+            url=f"/games/{game_id}/acts/{proposal.scene.act_id}/scenes", status_code=303
+        )
     return RedirectResponse(url=f"/games/{game_id}/world-document", status_code=303)

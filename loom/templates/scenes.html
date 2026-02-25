@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}{{ act.title if act.title else "Act " ~ act.order }} — Scenes — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }} — {{ act.title if act.title else "Act " ~ act.order }} — Scenes</h1>
+<p><strong>Act guiding question:</strong> {{ act.guiding_question }}</p>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="/games/{{ game.id }}">Dashboard</a> |
+    <a href="/games/{{ game.id }}/acts">Acts</a> |
+    <a href="/games/{{ game.id }}/characters">Characters</a> |
+    <a href="/games/{{ game.id }}/safety-tools">Safety Tools</a> |
+    <a href="/games/{{ game.id }}/world-document">World Doc</a>
+</nav>
+
+<section style="margin-top:1.5rem;">
+  <h2>Scenes</h2>
+  {% if scenes %}
+  <ol>
+    {% for scene in scenes %}
+    <li style="margin-bottom:0.75rem;">
+      <strong>Scene {{ loop.index }}</strong>
+      <em>({{ scene.status.value | capitalize }})</em>
+      {% if scene.status.value == "active" %} &mdash; Tension: {{ scene.tension }}{% endif %}
+      <br>{{ scene.guiding_question }}
+      {% if scene.location %}<br><em>Location: {{ scene.location }}</em>{% endif %}
+      {% if scene.characters_present %}
+      <br>Characters present:
+      {% for char in scene.characters_present %}{{ char.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p>No scenes yet. Propose the first scene to begin.</p>
+  {% endif %}
+</section>
+
+{% if open_proposal %}
+<section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2>Pending Scene Proposal</h2>
+  {% set proposed_scene = open_proposal.scene %}
+  {% if proposed_scene %}
+  <p>{{ proposed_scene.guiding_question }}</p>
+  {% if proposed_scene.location %}<p><em>Location: {{ proposed_scene.location }}</em></p>{% endif %}
+  <p>Tension: {{ proposed_scene.tension }}</p>
+  {% if proposed_scene.characters_present %}
+  <p>Characters:
+  {% for char in proposed_scene.characters_present %}{{ char.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+  {% endif %}
+  <p>
+    <strong>Proposed by:</strong> {{ open_proposal.proposed_by.display_name if open_proposal.proposed_by else "Unknown" }}
+    &mdash; <strong>Status:</strong> {{ open_proposal.status.value | capitalize }}
+  </p>
+  <p>
+    <strong>Votes:</strong> {{ yes_count }} yes &middot; {{ no_count }} no &middot; {{ suggest_count }} suggestion(s)
+    &nbsp;({{ total_players }} player{{ "s" if total_players != 1 else "" }} total,
+    threshold: more than {{ threshold | int if threshold == (threshold | int) else threshold }})
+  </p>
+
+  {% if open_proposal.votes %}
+  <ul>
+    {% for v in open_proposal.votes %}
+    <li>
+      <strong>{{ v.voter.display_name if v.voter else "Anonymous" }}:</strong>
+      {{ v.choice.value | replace("_", " ") | capitalize }}
+      {% if v.suggestion %}
+      <br><em style="color:#555;">Suggestion: {{ v.suggestion }}</em>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if not my_vote %}
+  <form method="post" action="/games/{{ game.id }}/proposals/{{ open_proposal.id }}/vote" style="margin-top:1rem;">
+    <fieldset>
+      <legend><strong>Cast your vote</strong></legend>
+      <label style="display:block; margin:0.4rem 0;">
+        <input type="radio" name="choice" value="yes" required> Yes, approve
+      </label>
+      <label style="display:block; margin:0.4rem 0;">
+        <input type="radio" name="choice" value="no"> No, reject
+      </label>
+      <label style="display:block; margin:0.4rem 0;">
+        <input type="radio" name="choice" value="suggest_modification"> Suggest modification
+      </label>
+      <div style="margin-top:0.5rem;">
+        <label for="suggestion">Suggestion (optional):</label><br>
+        <textarea id="suggestion" name="suggestion" rows="3" style="width:100%; box-sizing:border-box;"></textarea>
+      </div>
+      <button type="submit" style="margin-top:0.5rem;">Submit vote</button>
+    </fieldset>
+  </form>
+  {% else %}
+  <p>Your vote: <strong>{{ my_vote.choice.value | replace("_", " ") | capitalize }}</strong>
+  {% if my_vote.suggestion %} &mdash; <em>{{ my_vote.suggestion }}</em>{% endif %}</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if act.status.value == "active" and not open_proposal %}
+<section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2>Propose a New Scene</h2>
+  <form method="post" action="/games/{{ game.id }}/acts/{{ act.id }}/scenes">
+    <div>
+      <label for="guiding_question">Guiding Question (required):</label><br>
+      <textarea id="guiding_question" name="guiding_question" rows="3" required
+        style="width:100%; box-sizing:border-box;"
+        placeholder="e.g. Can the party secure the sealed vault before dawn?"></textarea>
+    </div>
+    <div style="margin-top:0.5rem;">
+      <label for="location">Location (optional):</label><br>
+      <input type="text" id="location" name="location" maxlength="300"
+        style="width:100%; box-sizing:border-box;">
+    </div>
+    <div style="margin-top:0.5rem;">
+      <label for="tension">Tension (1–9, default 5):</label><br>
+      <input type="number" id="tension" name="tension" min="1" max="9" value="5" style="width:4rem;">
+    </div>
+    <div style="margin-top:0.5rem;">
+      <label><strong>Characters Present</strong> (select at least one):</label><br>
+      {% for char in characters %}
+      <label style="display:block; margin:0.25rem 0;">
+        <input type="checkbox" name="character_ids" value="{{ char.id }}">
+        {{ char.name }}{% if char.owner %} <em style="color:#666;">({{ char.owner.display_name }})</em>{% endif %}
+      </label>
+      {% endfor %}
+      {% if not characters %}
+      <p style="color:#888;"><em>No characters exist yet. Create characters before proposing a scene.</em></p>
+      {% endif %}
+    </div>
+    <button type="submit" style="margin-top:0.75rem;">Propose Scene</button>
+  </form>
+</section>
+{% endif %}
+
+<p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}/acts">&larr; Back to Acts</a></p>
+{% endblock %}
