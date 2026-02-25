@@ -28,7 +28,7 @@ from loom.models import (
     WorldDocument,
 )
 from loom.rendering import templates
-from loom.voting import is_approved
+from loom.voting import approval_threshold, is_approved
 
 router = APIRouter()
 
@@ -117,6 +117,11 @@ async def create_world_doc_and_proposal(
     open_proposal = next((p for p in game.proposals if p.status == ProposalStatus.open), None)
     is_new_proposal = open_proposal is None
     if not is_new_proposal:
+        if open_proposal.proposal_type != proposal_type:
+            raise HTTPException(
+                status_code=409,
+                detail="A conflicting open proposal already exists",
+            )
         proposal = open_proposal
     else:
         proposal = VoteProposal(
@@ -201,7 +206,7 @@ async def view_world_document(
         )
 
     total_players = len(game.members)
-    threshold = game.status != GameStatus.active and total_players / 2 or 0
+    threshold = approval_threshold(total_players) if game.status != GameStatus.active else 0
     has_open_proposal = any(p.status == ProposalStatus.open for p in game.proposals)
 
     return templates.TemplateResponse(
