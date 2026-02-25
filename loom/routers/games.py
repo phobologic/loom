@@ -7,7 +7,7 @@ import secrets
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
@@ -132,6 +132,7 @@ async def invite_landing(
             request,
             "invite.html",
             {"game": None, "error": "Invite link is invalid or has been revoked."},
+            status_code=404,
         )
 
     # If already a member, redirect to the dashboard
@@ -177,15 +178,20 @@ async def join_game(
     if _find_membership(game, current_user.id):
         return RedirectResponse(url=f"/games/{game.id}", status_code=303)
 
-    # Enforce player cap
-    if len(game.members) >= MAX_GAME_PLAYERS:
+    # Enforce player cap — re-query the count immediately before inserting to
+    # narrow the TOCTOU window between the initial load and the commit.
+    count_result = await db.execute(
+        select(func.count(GameMember.id)).where(GameMember.game_id == game.id)
+    )
+    current_count = count_result.scalar()
+    if current_count >= MAX_GAME_PLAYERS:
         return templates.TemplateResponse(
             request,
             "invite.html",
             {
                 "game": game,
                 "token": token,
-                "member_count": len(game.members),
+                "member_count": current_count,
                 "max_players": MAX_GAME_PLAYERS,
                 "is_full": True,
                 "error": "This game is full (maximum 5 players).",
@@ -252,8 +258,11 @@ async def update_game_settings(
         raise HTTPException(status_code=403, detail="Only the organizer can change settings")
 
     game.silence_timer_hours = max(1, min(168, silence_timer_hours))
-    game.tie_breaking_method = TieBreakingMethod(tie_breaking_method)
-    game.beat_significance_threshold = BeatSignificanceThreshold(beat_significance_threshold)
+    try:
+        game.tie_breaking_method = TieBreakingMethod(tie_breaking_method)
+        game.beat_significance_threshold = BeatSignificanceThreshold(beat_significance_threshold)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid setting value")
     game.max_consecutive_beats = max(1, min(10, max_consecutive_beats))
     game.auto_generate_narrative = bool(auto_generate_narrative)
     game.fortune_roll_contest_window_hours = (

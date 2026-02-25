@@ -2,15 +2,19 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import Request
 
 from loom import models as _models  # noqa: F401 - registers models with Base.metadata
 from loom.config import settings
 from loom.database import AsyncSessionLocal, Base, engine
+from loom.dependencies import _AuthRedirect
 from loom.models import User
 from loom.routers import auth, games, pages
 
@@ -39,7 +43,16 @@ app = FastAPI(title="Loom", lifespan=lifespan)
 
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
 
-app.mount("/static", StaticFiles(directory="loom/static"), name="static")
+app.mount(
+    "/static",
+    StaticFiles(directory=Path(__file__).parent / "static"),
+    name="static",
+)
 app.include_router(pages.router)
 app.include_router(auth.router)
 app.include_router(games.router)
+
+
+@app.exception_handler(_AuthRedirect)
+async def auth_redirect_handler(request: Request, exc: _AuthRedirect) -> RedirectResponse:
+    return RedirectResponse(url="/dev/login", status_code=302)

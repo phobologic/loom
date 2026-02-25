@@ -1,6 +1,6 @@
 ---
 id: loo-l75i
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-25T02:30:21Z

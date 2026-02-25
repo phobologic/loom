@@ -155,7 +155,7 @@ class TestInviteLanding:
 
     async def test_invalid_token_shows_error(self, client: AsyncClient) -> None:
         response = await client.get("/invite/not-a-real-token")
-        assert response.status_code == 200
+        assert response.status_code == 404
         assert "invalid" in response.text.lower() or "revoked" in response.text.lower()
 
     async def test_already_member_redirects_to_dashboard(self, client: AsyncClient) -> None:

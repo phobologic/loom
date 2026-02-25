@@ -1,6 +1,6 @@
 ---
 id: loo-ifdf
-status: open
+status: closed
 deps: []
 links: [loo-90l5]
 created: 2026-02-25T02:28:52Z

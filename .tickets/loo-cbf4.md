@@ -1,6 +1,6 @@
 ---
 id: loo-cbf4
-status: open
+status: closed
 deps: []
 links: [loo-lda5]
 created: 2026-02-25T02:29:33Z
