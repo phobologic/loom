@@ -14,7 +14,15 @@ from starlette.requests import Request
 
 from loom.database import get_db
 from loom.dependencies import get_current_user
-from loom.models import Game, GameMember, GameStatus, MemberRole, User
+from loom.models import (
+    BeatSignificanceThreshold,
+    Game,
+    GameMember,
+    GameStatus,
+    MemberRole,
+    TieBreakingMethod,
+    User,
+)
 
 templates = Jinja2Templates(directory="loom/templates")
 
@@ -189,6 +197,74 @@ async def join_game(
     db.add(member)
     await db.commit()
     return RedirectResponse(url=f"/games/{game.id}", status_code=303)
+
+
+@router.get("/games/{game_id}/settings", response_class=HTMLResponse)
+async def game_settings(
+    game_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Show game settings — readable by all members, editable by organizer only."""
+    result = await db.execute(
+        select(Game).where(Game.id == game_id).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    return templates.TemplateResponse(
+        request,
+        "game_settings.html",
+        {"game": game, "current_member": current_member},
+    )
+
+
+@router.post("/games/{game_id}/settings", response_class=RedirectResponse)
+async def update_game_settings(
+    game_id: int,
+    request: Request,
+    silence_timer_hours: int = Form(12),
+    tie_breaking_method: str = Form("random"),
+    beat_significance_threshold: str = Form("flag_obvious"),
+    max_consecutive_beats: int = Form(3),
+    auto_generate_narrative: str = Form(""),
+    fortune_roll_contest_window_hours: str = Form(""),
+    starting_tension: int = Form(5),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Update game settings (organizer only)."""
+    result = await db.execute(
+        select(Game).where(Game.id == game_id).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can change settings")
+
+    game.silence_timer_hours = max(1, min(168, silence_timer_hours))
+    game.tie_breaking_method = TieBreakingMethod(tie_breaking_method)
+    game.beat_significance_threshold = BeatSignificanceThreshold(beat_significance_threshold)
+    game.max_consecutive_beats = max(1, min(10, max_consecutive_beats))
+    game.auto_generate_narrative = bool(auto_generate_narrative)
+    game.fortune_roll_contest_window_hours = (
+        max(1, min(168, int(fortune_roll_contest_window_hours)))
+        if fortune_roll_contest_window_hours.strip()
+        else None
+    )
+    game.starting_tension = max(1, min(9, starting_tension))
+
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}/settings", status_code=303)
 
 
 @router.post("/games/{game_id}/invite/regenerate", response_class=RedirectResponse)

@@ -88,6 +88,22 @@ class EventType(str, enum.Enum):
     ooc = "ooc"
 
 
+class TieBreakingMethod(str, enum.Enum):
+    """How tied votes on a major beat are resolved."""
+
+    random = "random"
+    proposer = "proposer"
+    challenger = "challenger"
+
+
+class BeatSignificanceThreshold(str, enum.Enum):
+    """How aggressively the system flags beats as major."""
+
+    flag_most = "flag_most"
+    flag_obvious = "flag_obvious"
+    minimal = "minimal"
+
+
 # ---------------------------------------------------------------------------
 # Timestamp mixin
 # ---------------------------------------------------------------------------
@@ -165,6 +181,25 @@ class Game(TimestampMixin, Base):
         Enum(GameStatus, native_enum=False), nullable=False, default=GameStatus.setup
     )
     invite_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+
+    # Configurable settings
+    silence_timer_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
+    tie_breaking_method: Mapped[TieBreakingMethod] = mapped_column(
+        Enum(TieBreakingMethod, native_enum=False),
+        nullable=False,
+        default=TieBreakingMethod.random,
+    )
+    beat_significance_threshold: Mapped[BeatSignificanceThreshold] = mapped_column(
+        Enum(BeatSignificanceThreshold, native_enum=False),
+        nullable=False,
+        default=BeatSignificanceThreshold.flag_obvious,
+    )
+    max_consecutive_beats: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    auto_generate_narrative: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    fortune_roll_contest_window_hours: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None
+    )
+    starting_tension: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
 
     members: Mapped[list[GameMember]] = relationship(
         back_populates="game", cascade="all, delete-orphan"

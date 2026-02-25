@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from loom.database import AsyncSessionLocal, Base, engine
 from loom.main import _seed_dev_users, app
-from loom.models import Game, GameMember, MemberRole
+from loom.models import Game, GameMember, MemberRole, TieBreakingMethod
 from loom.routers.games import MAX_GAME_PLAYERS
 
 
@@ -273,6 +273,97 @@ class TestInviteManagement:
             game = result.scalar_one()
         assert game.invite_token is None
 
+
+class TestGameSettings:
+    async def test_settings_requires_auth(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await client.post("/dev/logout", follow_redirects=False)
+        response = await client.get(f"/games/{game_id}/settings", follow_redirects=False)
+        assert response.status_code == 302
+        assert "/dev/login" in response.headers["location"]
+
+    async def test_settings_requires_membership(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await client.post("/dev/logout", follow_redirects=False)
+        await _login(client, 2)
+        response = await client.get(f"/games/{game_id}/settings")
+        assert response.status_code == 403
+
+    async def test_settings_page_loads_for_organizer(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        response = await client.get(f"/games/{game_id}/settings")
+        assert response.status_code == 200
+        assert "silence" in response.text.lower()
+        assert "Save settings" in response.text
+
+    async def test_player_can_view_settings(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Game).where(Game.id == game_id))
+            token = result.scalar_one().invite_token
+        await client.post("/dev/logout", follow_redirects=False)
+        await _login(client, 2)
+        await client.post(f"/invite/{token}", follow_redirects=False)
+        response = await client.get(f"/games/{game_id}/settings")
+        assert response.status_code == 200
+        assert "silence" in response.text.lower()
+        assert "Save settings" not in response.text
+
+    async def test_organizer_can_update_settings(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        response = await client.post(
+            f"/games/{game_id}/settings",
+            data={
+                "silence_timer_hours": "24",
+                "tie_breaking_method": "proposer",
+                "beat_significance_threshold": "flag_most",
+                "max_consecutive_beats": "5",
+                "auto_generate_narrative": "",
+                "fortune_roll_contest_window_hours": "6",
+                "starting_tension": "7",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert f"/games/{game_id}/settings" in response.headers["location"]
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Game).where(Game.id == game_id))
+            game = result.scalar_one()
+        assert game.silence_timer_hours == 24
+        assert game.tie_breaking_method == TieBreakingMethod.proposer
+        assert game.auto_generate_narrative is False
+        assert game.fortune_roll_contest_window_hours == 6
+        assert game.starting_tension == 7
+
+    async def test_player_cannot_update_settings(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Game).where(Game.id == game_id))
+            token = result.scalar_one().invite_token
+        await client.post("/dev/logout", follow_redirects=False)
+        await _login(client, 2)
+        await client.post(f"/invite/{token}", follow_redirects=False)
+        response = await client.post(
+            f"/games/{game_id}/settings",
+            data={"silence_timer_hours": "24"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    async def test_settings_returns_404_for_missing_game(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        response = await client.get("/games/99999/settings")
+        assert response.status_code == 404
+
+
+class TestInviteManagementRevoke:
     async def test_revoke_requires_organizer(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)

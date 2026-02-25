@@ -1,6 +1,6 @@
 ---
 id: loo-ad8u
-status: open
+status: closed
 deps: [loo-vyev]
 links: []
 created: 2026-02-25T01:22:41Z

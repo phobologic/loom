@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}{{ game.name }} — Settings — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }} — Settings</h1>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="#" aria-disabled="true">Acts</a> |
+    <strong>Settings</strong> |
+    <a href="#" aria-disabled="true">World Doc</a>
+</nav>
+
+{% if current_member.role.value == "organizer" %}
+<form method="post" action="/games/{{ game.id }}/settings" style="margin-top:1rem;">
+
+<h2>Timing</h2>
+
+<div>
+    <label for="silence_timer_hours">Silence timer (hours)</label><br>
+    <small>How long before an uncontested major beat auto-approves. (1–168 hrs)</small><br>
+    <input type="number" id="silence_timer_hours" name="silence_timer_hours"
+           value="{{ game.silence_timer_hours }}" min="1" max="168" required>
+</div>
+
+<div style="margin-top:0.75rem;">
+    <label for="fortune_roll_contest_window_hours">Fortune Roll contest window (hours)</label><br>
+    <small>Leave blank for default (half the silence timer, min 1 hr). (1–168 hrs)</small><br>
+    <input type="number" id="fortune_roll_contest_window_hours"
+           name="fortune_roll_contest_window_hours"
+           value="{{ game.fortune_roll_contest_window_hours if game.fortune_roll_contest_window_hours is not none else '' }}"
+           min="1" max="168" placeholder="Default">
+</div>
+
+<h2 style="margin-top:1rem;">Voting</h2>
+
+<div>
+    <label for="tie_breaking_method">Tie-breaking method</label><br>
+    <select id="tie_breaking_method" name="tie_breaking_method">
+        <option value="random" {% if game.tie_breaking_method.value == "random" %}selected{% endif %}>Random / die roll</option>
+        <option value="proposer" {% if game.tie_breaking_method.value == "proposer" %}selected{% endif %}>Proposer decides</option>
+        <option value="challenger" {% if game.tie_breaking_method.value == "challenger" %}selected{% endif %}>Challenger decides</option>
+    </select>
+</div>
+
+<h2 style="margin-top:1rem;">Beat Classification</h2>
+
+<div>
+    <label for="beat_significance_threshold">Beat significance threshold</label><br>
+    <select id="beat_significance_threshold" name="beat_significance_threshold">
+        <option value="flag_most" {% if game.beat_significance_threshold.value == "flag_most" %}selected{% endif %}>Flag most things as major</option>
+        <option value="flag_obvious" {% if game.beat_significance_threshold.value == "flag_obvious" %}selected{% endif %}>Only flag obvious things (default)</option>
+        <option value="minimal" {% if game.beat_significance_threshold.value == "minimal" %}selected{% endif %}>Minimal flagging</option>
+    </select>
+</div>
+
+<h2 style="margin-top:1rem;">Spotlight</h2>
+
+<div>
+    <label for="max_consecutive_beats">Max consecutive beats per player before nudge</label><br>
+    <small>Soft spotlight reminder after this many beats in a row. (1–10)</small><br>
+    <input type="number" id="max_consecutive_beats" name="max_consecutive_beats"
+           value="{{ game.max_consecutive_beats }}" min="1" max="10" required>
+</div>
+
+<h2 style="margin-top:1rem;">Narrative Generation</h2>
+
+<div>
+    <label>
+        <input type="checkbox" name="auto_generate_narrative" value="on"
+               {% if game.auto_generate_narrative %}checked{% endif %}>
+        Auto-generate narrative summary on scene/act completion
+    </label>
+</div>
+
+<h2 style="margin-top:1rem;">Acts</h2>
+
+<div>
+    <label for="starting_tension">Starting Tension for new acts</label><br>
+    <small>Tension scale is 1–9.</small><br>
+    <input type="number" id="starting_tension" name="starting_tension"
+           value="{{ game.starting_tension }}" min="1" max="9" required>
+</div>
+
+<div style="margin-top:1rem;">
+    <button type="submit">Save settings</button>
+</div>
+</form>
+
+{% else %}
+
+<h2 style="margin-top:1rem;">Timing</h2>
+<dl>
+    <dt>Silence timer</dt>
+    <dd>{{ game.silence_timer_hours }} hours</dd>
+
+    <dt>Fortune Roll contest window</dt>
+    <dd>{% if game.fortune_roll_contest_window_hours is not none %}{{ game.fortune_roll_contest_window_hours }} hours{% else %}Default (half silence timer, min 1 hr){% endif %}</dd>
+</dl>
+
+<h2>Voting</h2>
+<dl>
+    <dt>Tie-breaking method</dt>
+    <dd>
+        {% if game.tie_breaking_method.value == "random" %}Random / die roll
+        {% elif game.tie_breaking_method.value == "proposer" %}Proposer decides
+        {% else %}Challenger decides{% endif %}
+    </dd>
+</dl>
+
+<h2>Beat Classification</h2>
+<dl>
+    <dt>Beat significance threshold</dt>
+    <dd>
+        {% if game.beat_significance_threshold.value == "flag_most" %}Flag most things as major
+        {% elif game.beat_significance_threshold.value == "flag_obvious" %}Only flag obvious things
+        {% else %}Minimal flagging{% endif %}
+    </dd>
+</dl>
+
+<h2>Spotlight</h2>
+<dl>
+    <dt>Max consecutive beats per player before nudge</dt>
+    <dd>{{ game.max_consecutive_beats }}</dd>
+</dl>
+
+<h2>Narrative Generation</h2>
+<dl>
+    <dt>Auto-generate narrative on completion</dt>
+    <dd>{% if game.auto_generate_narrative %}On{% else %}Off{% endif %}</dd>
+</dl>
+
+<h2>Acts</h2>
+<dl>
+    <dt>Starting Tension for new acts</dt>
+    <dd>{{ game.starting_tension }}</dd>
+</dl>
+
+{% endif %}
+
+<p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}">&larr; Dashboard</a></p>
+{% endblock %}
