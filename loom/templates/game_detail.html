@@ -78,5 +78,33 @@
 </section>
 {% endif %}
 
+<section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2>Acts</h2>
+  {% if acts %}
+  <ol>
+    {% for act in acts %}
+    <li>
+      <strong>{{ act.title if act.title else "Act " ~ loop.index }}</strong>
+      <em>({{ act.status.value | capitalize }})</em>
+      {% if act.guiding_question %} — {{ act.guiding_question }}{% endif %}
+      {% if act.status.value == "active" and act.scenes %}
+      <ul style="margin-top:0.5rem;">
+        {% for scene in act.scenes %}
+        <li>
+          Scene {{ loop.index }}: {{ scene.guiding_question }}
+          {% if scene.location %} — <em>{{ scene.location }}</em>{% endif %}
+          [{{ scene.status.value | capitalize }}{% if scene.status.value == "active" %}, tension {{ scene.tension }}{% endif %}]
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p>No acts yet. Acts will appear here once play begins.</p>
+  {% endif %}
+</section>
+
 <p style="margin-top:1rem;"><a href="/games">&larr; My Games</a></p>
 {% endblock %}

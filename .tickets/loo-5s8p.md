@@ -1,6 +1,6 @@
 ---
 id: loo-5s8p
-status: open
+status: closed
 deps: [loo-nv8x]
 links: []
 created: 2026-02-25T01:22:42Z

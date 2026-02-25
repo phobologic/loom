@@ -14,6 +14,7 @@ from starlette.requests import Request
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
+    Act,
     BeatSignificanceThreshold,
     Game,
     GameMember,
@@ -84,11 +85,14 @@ async def game_detail(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    """Show the game dashboard shell."""
+    """Show the game dashboard."""
     result = await db.execute(
         select(Game)
         .where(Game.id == game_id)
-        .options(selectinload(Game.members).selectinload(GameMember.user))
+        .options(
+            selectinload(Game.members).selectinload(GameMember.user),
+            selectinload(Game.acts).selectinload(Act.scenes),
+        )
     )
     game = result.scalar_one_or_none()
     if game is None:
@@ -102,6 +106,10 @@ async def game_detail(
     if current_member.role == MemberRole.organizer and game.invite_token:
         invite_url = str(request.base_url) + f"invite/{game.invite_token}"
 
+    acts = sorted(game.acts, key=lambda a: a.order)
+    for act in acts:
+        act.scenes.sort(key=lambda s: s.order)
+
     return templates.TemplateResponse(
         request,
         "game_detail.html",
@@ -111,6 +119,7 @@ async def game_detail(
             "current_member": current_member,
             "invite_url": invite_url,
             "max_players": MAX_GAME_PLAYERS,
+            "acts": acts,
         },
     )
 
