@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Characters — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>Characters — {{ game.name }}</h1>
+<p><strong>Status:</strong> {{ game.status.value | capitalize }}</p>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="/games/{{ game.id }}">Dashboard</a> |
+    <a href="/games/{{ game.id }}/characters">Characters</a> |
+    <a href="/games/{{ game.id }}/safety-tools">Safety Tools</a> |
+    <a href="/games/{{ game.id }}/world-document">World Doc</a> |
+    <a href="/games/{{ game.id }}/settings">Settings</a>
+</nav>
+
+{% if editing %}
+<section style="margin-top:1.5rem; padding:0.75rem; border:1px solid #999;">
+  <h2>Edit Character: {{ editing.name }}</h2>
+  <form method="post" action="/games/{{ game.id }}/characters/{{ editing.id }}/edit">
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-name"><strong>Name</strong> (required)</label><br>
+      <input id="edit-name" type="text" name="name" value="{{ editing.name }}" maxlength="100" required style="width:100%; max-width:400px;">
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-description"><strong>Description</strong></label><br>
+      <textarea id="edit-description" name="description" rows="4" style="width:100%; max-width:600px;">{{ editing.description or "" }}</textarea>
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-notes"><strong>Notes</strong> (personality, goals, etc.)</label><br>
+      <textarea id="edit-notes" name="notes" rows="3" style="width:100%; max-width:600px;">{{ editing.notes or "" }}</textarea>
+    </div>
+    <button type="submit">Save Changes</button>
+    <a href="/games/{{ game.id }}/characters" style="margin-left:0.75rem;">Cancel</a>
+  </form>
+</section>
+{% endif %}
+
+<section style="margin-top:1.5rem;">
+  <h2>Characters ({{ characters | length }})</h2>
+  {% if characters %}
+  <ul style="list-style:none; padding:0;">
+    {% for char in characters %}
+    <li style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd;">
+      <strong>{{ char.name }}</strong>
+      {% if char.owner %}
+        <em style="color:#666;"> — played by {{ char.owner.display_name }}</em>
+      {% endif %}
+      {% if char.description %}
+        <p style="margin:0.4rem 0 0;">{{ char.description }}</p>
+      {% endif %}
+      {% if char.notes %}
+        <p style="margin:0.25rem 0 0; color:#555;"><em>Notes: {{ char.notes }}</em></p>
+      {% endif %}
+      {% if game.status.value != "archived" %}
+        {% if char.owner_id == current_user.id or current_member.role.value == "organizer" %}
+        <a href="/games/{{ game.id }}/characters/{{ char.id }}/edit" style="font-size:0.9em;">Edit</a>
+        {% endif %}
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No characters yet.</p>
+  {% endif %}
+</section>
+
+{% if not editing %}
+  {% if game.status.value == "active" and my_character is none %}
+  <section style="margin-top:1.5rem; padding:0.75rem; border:1px solid #ccc;">
+    <h2>Create Your Character</h2>
+    <form method="post" action="/games/{{ game.id }}/characters">
+      <div style="margin-bottom:0.5rem;">
+        <label for="name"><strong>Name</strong> (required)</label><br>
+        <input id="name" type="text" name="name" maxlength="100" required style="width:100%; max-width:400px;">
+      </div>
+      <div style="margin-bottom:0.5rem;">
+        <label for="description"><strong>Description</strong></label><br>
+        <textarea id="description" name="description" rows="4" style="width:100%; max-width:600px;"></textarea>
+      </div>
+      <div style="margin-bottom:0.5rem;">
+        <label for="notes"><strong>Notes</strong> (personality, goals, etc.)</label><br>
+        <textarea id="notes" name="notes" rows="3" style="width:100%; max-width:600px;"></textarea>
+      </div>
+      <button type="submit">Create Character</button>
+    </form>
+  </section>
+  {% elif game.status.value == "paused" and my_character is none %}
+  <p style="margin-top:1rem; color:#888;"><em>The game is paused. Character creation will resume when the game is active.</em></p>
+  {% elif my_character is not none %}
+  <p style="margin-top:1rem; color:#555;"><em>You have created your character. Use the Edit link above to make changes.</em></p>
+  {% endif %}
+{% endif %}
+
+<p style="margin-top:1rem;"><a href="/games/{{ game.id }}">&larr; Dashboard</a></p>
+{% endblock %}

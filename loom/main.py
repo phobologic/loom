@@ -16,7 +16,7 @@ from loom.config import settings
 from loom.database import AsyncSessionLocal, Base, engine
 from loom.dependencies import _AuthRedirect
 from loom.models import User
-from loom.routers import auth, games, pages, safety_tools, session0, world_document
+from loom.routers import auth, characters, games, pages, safety_tools, session0, world_document
 
 _DEV_USERS = ["Alice", "Bob", "Charlie"]
 
@@ -54,6 +54,7 @@ app.include_router(games.router)
 app.include_router(session0.router)
 app.include_router(safety_tools.router)
 app.include_router(world_document.router)
+app.include_router(characters.router)
 
 
 @app.exception_handler(_AuthRedirect)

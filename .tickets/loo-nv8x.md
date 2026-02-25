@@ -1,6 +1,6 @@
 ---
 id: loo-nv8x
-status: open
+status: closed
 deps: [loo-6wck]
 links: []
 created: 2026-02-25T01:22:42Z
