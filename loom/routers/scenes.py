@@ -11,6 +11,8 @@ from starlette.requests import Request
 
 from loom.database import get_db
 from loom.dependencies import get_current_user
+from loom.dice import DiceError
+from loom.dice import roll as roll_dice
 from loom.models import (
     Act,
     ActStatus,
@@ -353,8 +355,17 @@ async def submit_beat(
             notation = enotation.strip()
             if not notation:
                 raise HTTPException(status_code=422, detail="Roll event requires notation")
+            try:
+                result = roll_dice(notation)
+            except DiceError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
             event_specs.append(
-                {"type": "roll", "notation": notation, "reason": ereason.strip() or None}
+                {
+                    "type": "roll",
+                    "notation": notation,
+                    "result": result,
+                    "reason": ereason.strip() or None,
+                }
             )
 
     if not event_specs:
@@ -385,6 +396,7 @@ async def submit_beat(
                 beat_id=beat.id,
                 type=EventType.roll,
                 roll_notation=spec["notation"],
+                roll_result=spec["result"],
                 content=spec["reason"],
                 order=i + 1,
             )

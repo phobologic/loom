@@ -1036,7 +1036,9 @@ class TestSubmitBeatMultiEvent:
         assert ev.type == EventType.roll
         assert ev.roll_notation == "2d6+3"
         assert ev.content == "Climbing the wall"
-        assert ev.roll_result is None  # dice not yet rolled
+        # 2d6+3: min=5, max=15
+        assert ev.roll_result is not None
+        assert 5 <= ev.roll_result <= 15
 
     async def test_roll_without_reason(self, client: AsyncClient) -> None:
         game_id = await _create_active_game(client)
@@ -1052,6 +1054,20 @@ class TestSubmitBeatMultiEvent:
         ev = beats[0].events[0]
         assert ev.roll_notation == "1d20"
         assert ev.content is None
+        assert ev.roll_result is not None
+        assert 1 <= ev.roll_result <= 20
+
+    async def test_roll_invalid_notation_rejected(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"event_type": "roll", "event_notation": "roll some dice"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 422
 
     async def test_roll_requires_notation(self, client: AsyncClient) -> None:
         game_id = await _create_active_game(client)
