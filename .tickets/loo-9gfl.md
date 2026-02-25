@@ -35,3 +35,21 @@ NOTE: This requirement is DEFERRED to Step 25 (Real Auth). Step 3 implements dev
 - Users can see which games they belong to.
 - Users can configure their notification preferences (see REQ-NOTIFY).
 
+
+## Notes
+
+**2026-02-25T05:07:03Z**
+
+Review finding loo-1e4u: Dev auth /dev/login has no environment guard — ensure this is removed/gated when real auth is wired in.
+
+**2026-02-25T05:07:03Z**
+
+Review finding loo-naha: No server-side length cap on free-text fields (Session0Response.content, GameSafetyTool.description, Vote.suggestion) — add input validation.
+
+**2026-02-25T05:07:03Z**
+
+Review finding loo-1put: prompt_id not validated to belong to game_id at DB layer in session0 routes — add explicit authorization check.
+
+**2026-02-25T05:07:03Z**
+
+Review finding loo-kmm2: Jinja2 autoescape not explicitly configured in rendering.py — declare explicitly before production.

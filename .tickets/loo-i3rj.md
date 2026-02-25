@@ -54,3 +54,13 @@ The minimal voting introduced in Step 8 is replaced/upgraded here.
 - Settings can be changed by the organizer at any time.
 - Changes to settings are visible to all players.
 
+
+## Notes
+
+**2026-02-25T05:07:03Z**
+
+Review finding loo-p1mt: Race condition (TOCTOU) in cast_vote duplicate-vote detection — dedup check is on in-memory collection; concurrent requests can both pass. Handle IntegrityError from DB UniqueConstraint.
+
+**2026-02-25T05:07:03Z**
+
+Review finding loo-4ur6: cast_vote does not assert proposal.game_id == game_id — add defense-in-depth check when voting is rewritten.
