@@ -1,6 +1,6 @@
 ---
 id: loo-bybi
-status: open
+status: in_progress
 deps: [loo-86qv]
 links: []
 created: 2026-02-25T01:22:43Z

@@ -1127,3 +1127,87 @@ class TestSubmitBeatMultiEvent:
         )
         assert b"The vault door slides open." in response.content
         assert b"Was that too easy?" in response.content
+
+
+# ---------------------------------------------------------------------------
+# Beat significance classification
+# ---------------------------------------------------------------------------
+
+
+class TestBeatSignificanceClassification:
+    async def test_minor_beat_is_immediately_canon(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={
+                "event_type": "narrative",
+                "event_content": "A minor thing happens.",
+                "beat_significance": "minor",
+            },
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert beats[0].significance.value == "minor"
+        assert beats[0].status == BeatStatus.canon
+
+    async def test_major_beat_enters_proposed_status(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={
+                "event_type": "narrative",
+                "event_content": "A major revelation.",
+                "beat_significance": "major",
+            },
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert beats[0].significance.value == "major"
+        assert beats[0].status == BeatStatus.proposed
+
+    async def test_default_significance_is_minor(self, client: AsyncClient) -> None:
+        """No beat_significance field defaults to minor (AI stub always returns minor)."""
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Something happens."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert beats[0].significance.value == "minor"
+        assert beats[0].status == BeatStatus.canon
+
+    async def test_invalid_significance_rejected(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"event_type": "narrative", "event_content": "Text.", "beat_significance": "huge"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 422
+
+    async def test_form_shows_significance_selector(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}",
+            follow_redirects=False,
+        )
+        assert b"beat_significance" in response.content
+        assert b"Minor" in response.content
+        assert b"Major" in response.content
+        assert b"AI suggests" in response.content

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
+from loom.ai.stubs import classify_beat_significance
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.dice import DiceError
@@ -310,6 +311,7 @@ async def submit_beat(
     event_content: list[str] = Form(default=[]),
     event_notation: list[str] = Form(default=[]),
     event_reason: list[str] = Form(default=[]),
+    beat_significance: str = Form(default="minor"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -371,13 +373,19 @@ async def submit_beat(
     if not event_specs:
         raise HTTPException(status_code=422, detail="A beat must have at least one event")
 
+    beat_significance = beat_significance.strip().lower()
+    if beat_significance not in (BeatSignificance.minor.value, BeatSignificance.major.value):
+        raise HTTPException(status_code=422, detail="Invalid beat significance")
+    significance = BeatSignificance(beat_significance)
+    status = BeatStatus.canon if significance == BeatSignificance.minor else BeatStatus.proposed
+
     next_order = max((b.order for b in scene.beats), default=0) + 1
 
     beat = Beat(
         scene_id=scene.id,
         author_id=current_user.id,
-        significance=BeatSignificance.minor,
-        status=BeatStatus.canon,
+        significance=significance,
+        status=status,
         order=next_order,
     )
     db.add(beat)
