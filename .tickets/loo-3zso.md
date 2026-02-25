@@ -1,6 +1,6 @@
 ---
 id: loo-3zso
-status: in_progress
+status: closed
 deps: []
 links: [loo-57gh]
 created: 2026-02-25T04:50:36Z

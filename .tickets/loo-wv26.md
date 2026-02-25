@@ -1,6 +1,6 @@
 ---
 id: loo-wv26
-status: in_progress
+status: closed
 deps: []
 links: [loo-hag2, loo-2lzh, loo-4w32]
 created: 2026-02-25T04:50:02Z

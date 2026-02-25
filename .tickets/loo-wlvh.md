@@ -1,6 +1,6 @@
 ---
 id: loo-wlvh
-status: in_progress
+status: closed
 deps: []
 links: []
 created: 2026-02-25T04:51:03Z

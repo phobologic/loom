@@ -1,6 +1,6 @@
 ---
 id: loo-b9nt
-status: in_progress
+status: closed
 deps: []
 links: []
 created: 2026-02-25T04:50:22Z
