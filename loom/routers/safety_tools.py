@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -15,6 +17,14 @@ from loom.models import Game, GameMember, GameSafetyTool, MemberRole, SafetyTool
 from loom.rendering import templates
 
 router = APIRouter()
+
+
+def _safe_referer(request: Request, fallback: str) -> str:
+    """Return the Referer URL only if it is same-origin; otherwise return fallback."""
+    referer = request.headers.get("referer")
+    if referer and urlparse(referer).netloc == request.url.netloc:
+        return referer
+    return fallback
 
 
 def _find_membership(game: Game, user_id: int) -> GameMember | None:
@@ -109,10 +119,9 @@ async def add_safety_tool(
     )
     await db.commit()
 
-    referer = request.headers.get("referer")
-    if referer:
-        return RedirectResponse(url=referer, status_code=303)
-    return RedirectResponse(url=f"/games/{game_id}/safety-tools", status_code=303)
+    return RedirectResponse(
+        url=_safe_referer(request, f"/games/{game_id}/safety-tools"), status_code=303
+    )
 
 
 @router.post("/games/{game_id}/safety-tools/{tool_id}/delete", response_class=RedirectResponse)
@@ -149,7 +158,6 @@ async def delete_safety_tool(
     await db.delete(tool)
     await db.commit()
 
-    referer = request.headers.get("referer")
-    if referer:
-        return RedirectResponse(url=referer, status_code=303)
-    return RedirectResponse(url=f"/games/{game_id}/safety-tools", status_code=303)
+    return RedirectResponse(
+        url=_safe_referer(request, f"/games/{game_id}/safety-tools"), status_code=303
+    )
