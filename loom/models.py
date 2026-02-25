@@ -113,6 +113,13 @@ class PromptStatus(str, enum.Enum):
     complete = "complete"  # synthesis accepted
 
 
+class SafetyToolKind(str, enum.Enum):
+    """Whether a safety tool is a hard limit or a fade-to-black."""
+
+    line = "line"
+    veil = "veil"
+
+
 # ---------------------------------------------------------------------------
 # Timestamp mixin
 # ---------------------------------------------------------------------------
@@ -226,6 +233,11 @@ class Game(TimestampMixin, Base):
         back_populates="game",
         cascade="all, delete-orphan",
         order_by="Session0Prompt.order",
+    )
+    safety_tools: Mapped[list[GameSafetyTool]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
+        order_by="GameSafetyTool.created_at",
     )
 
 
@@ -412,6 +424,7 @@ class Session0Prompt(TimestampMixin, Base):
     order: Mapped[int] = mapped_column(Integer, nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_safety_tools: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[PromptStatus] = mapped_column(
         Enum(PromptStatus, native_enum=False), nullable=False, default=PromptStatus.pending
     )
@@ -442,3 +455,22 @@ class Session0Response(TimestampMixin, Base):
     user: Mapped[User | None] = relationship()
 
     __table_args__ = (UniqueConstraint("prompt_id", "user_id", name="uq_session0_response"),)
+
+
+class GameSafetyTool(TimestampMixin, Base):
+    """A line or veil contributed by any member of a game."""
+
+    __tablename__ = "game_safety_tools"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    kind: Mapped[SafetyToolKind] = mapped_column(
+        Enum(SafetyToolKind, native_enum=False), nullable=False
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    game: Mapped[Game] = relationship(back_populates="safety_tools")
+    user: Mapped[User | None] = relationship()

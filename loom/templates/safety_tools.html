@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}{{ game.name }} — Safety Tools — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }} — Safety Tools</h1>
+
+<p>Lines and veils establish the shared content boundaries for this game.
+Any player can add or remove their own entries at any time.</p>
+
+<section>
+  <h2>Lines</h2>
+  <p><em>Hard limits — content that must not appear in this game.</em></p>
+  {% set lines = safety_tools | selectattr("kind.value", "equalto", "line") | list %}
+  {% if lines %}
+  <ul>
+    {% for t in lines %}
+    <li>
+      <strong>{{ t.description }}</strong>
+      <small>— added by {{ t.user.display_name if t.user else "Anonymous" }}</small>
+      {% if t.user_id == current_user.id or current_member.role.value == "organizer" %}
+      <form method="post" action="/games/{{ game.id }}/safety-tools/{{ t.id }}/delete"
+            style="display:inline; margin-left:0.5rem;">
+        <button type="submit">Remove</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p><em>No lines have been set.</em></p>
+  {% endif %}
+</section>
+
+<section style="margin-top:1.5rem;">
+  <h2>Veils</h2>
+  <p><em>Fade to black — content that exists in the world but is not depicted in detail.</em></p>
+  {% set veils = safety_tools | selectattr("kind.value", "equalto", "veil") | list %}
+  {% if veils %}
+  <ul>
+    {% for t in veils %}
+    <li>
+      <strong>{{ t.description }}</strong>
+      <small>— added by {{ t.user.display_name if t.user else "Anonymous" }}</small>
+      {% if t.user_id == current_user.id or current_member.role.value == "organizer" %}
+      <form method="post" action="/games/{{ game.id }}/safety-tools/{{ t.id }}/delete"
+            style="display:inline; margin-left:0.5rem;">
+        <button type="submit">Remove</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p><em>No veils have been set.</em></p>
+  {% endif %}
+</section>
+
+<section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2>Add a line or veil</h2>
+  <form method="post" action="/games/{{ game.id }}/safety-tools/add">
+    <div style="margin-bottom:0.5rem;">
+      <select name="kind" required>
+        <option value="line">Line (hard limit)</option>
+        <option value="veil">Veil (fade to black)</option>
+      </select>
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <input type="text" name="description" placeholder="Describe the content..."
+             style="width:60%; box-sizing:border-box;" required>
+    </div>
+    <button type="submit">Add</button>
+  </form>
+</section>
+
+<p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}">&larr; Game Dashboard</a></p>
+{% endblock %}

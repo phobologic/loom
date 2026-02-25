@@ -1,6 +1,6 @@
 ---
 id: loo-qlzi
-status: open
+status: closed
 deps: [loo-2c8x]
 links: []
 created: 2026-02-25T01:22:41Z

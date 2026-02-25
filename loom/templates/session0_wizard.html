@@ -53,6 +53,88 @@
     <h2>{{ prompt.question }}</h2>
     <p><strong>Status:</strong> {{ prompt.status.value | capitalize }}</p>
 
+    {% if prompt.is_safety_tools %}
+
+    <!-- Safety Tools UI — replaces the normal contributions/synthesis flow -->
+    <section>
+      <h3>Lines <small style="font-weight:normal;">(hard limits — content that must not appear)</small></h3>
+      {% set lines = safety_tools | selectattr("kind.value", "equalto", "line") | list %}
+      {% if lines %}
+      <ul>
+        {% for t in lines %}
+        <li>
+          {{ t.description }}
+          <small>— {{ t.user.display_name if t.user else "Anonymous" }}</small>
+          {% if t.user_id == current_user.id or current_member.role.value == "organizer" %}
+          <form method="post" action="/games/{{ game.id }}/safety-tools/{{ t.id }}/delete" style="display:inline; margin-left:0.4rem;">
+            <button type="submit" style="font-size:0.75rem;">Remove</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p><em>No lines set yet.</em></p>
+      {% endif %}
+
+      <h3>Veils <small style="font-weight:normal;">(fade to black — referenced but not depicted)</small></h3>
+      {% set veils = safety_tools | selectattr("kind.value", "equalto", "veil") | list %}
+      {% if veils %}
+      <ul>
+        {% for t in veils %}
+        <li>
+          {{ t.description }}
+          <small>— {{ t.user.display_name if t.user else "Anonymous" }}</small>
+          {% if t.user_id == current_user.id or current_member.role.value == "organizer" %}
+          <form method="post" action="/games/{{ game.id }}/safety-tools/{{ t.id }}/delete" style="display:inline; margin-left:0.4rem;">
+            <button type="submit" style="font-size:0.75rem;">Remove</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p><em>No veils set yet.</em></p>
+      {% endif %}
+    </section>
+
+    {% if prompt.status.value == "active" %}
+    <section style="margin-top:1rem;">
+      <h3>Add a line or veil</h3>
+      <form method="post" action="/games/{{ game.id }}/safety-tools/add">
+        <select name="kind" required style="margin-right:0.5rem;">
+          <option value="line">Line (hard limit)</option>
+          <option value="veil">Veil (fade to black)</option>
+        </select>
+        <input type="text" name="description" placeholder="Describe the content..."
+               required style="width:55%; box-sizing:border-box;">
+        <button type="submit" style="margin-left:0.3rem;">Add</button>
+      </form>
+    </section>
+    {% endif %}
+
+    {% if current_member.role.value == "organizer" and prompt.status.value == "active" %}
+    <section style="margin-top:1rem; border-top:1px solid #ddd; padding-top:1rem;">
+      <h3>Organizer controls</h3>
+      <form method="post" action="/games/{{ game.id }}/session0/{{ prompt.id }}/mark-done" style="display:inline;">
+        <button type="submit">Mark safety tools complete</button>
+      </form>
+      <form method="post" action="/games/{{ game.id }}/session0/{{ prompt.id }}/skip" style="display:inline; margin-left:0.5rem;">
+        <button type="submit">Skip this prompt</button>
+      </form>
+    </section>
+    {% endif %}
+
+    {% if prompt.status.value == "skipped" %}
+    <p style="margin-top:1rem;"><em>This prompt was skipped.</em></p>
+    {% endif %}
+
+    {% if prompt.status.value == "complete" %}
+    <p style="margin-top:1rem;"><em>Safety tools have been set.</em></p>
+    {% endif %}
+
+    {% else %}
+
     <!-- Contributions -->
     <section>
       <h3>Contributions</h3>
@@ -122,6 +204,8 @@
 
     {% if prompt.status.value == "complete" %}
     <p style="margin-top:1rem;"><em>This prompt is complete.</em></p>
+    {% endif %}
+
     {% endif %}
 
     <!-- Complete Session 0 button -->

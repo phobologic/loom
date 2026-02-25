@@ -15,6 +15,7 @@ from loom.dependencies import get_current_user
 from loom.models import (
     Game,
     GameMember,
+    GameSafetyTool,
     GameStatus,
     MemberRole,
     PromptStatus,
@@ -26,12 +27,17 @@ from loom.rendering import templates
 
 router = APIRouter()
 
+_SAFETY_TOOLS_QUESTION = (
+    "Set your lines and veils — hard limits (lines) and fade-to-black topics (veils) for this game."
+)
+
 _DEFAULT_PROMPTS = [
     "What genre and aesthetic define this world?",
     "What is the overall tone — dark and gritty, hopeful, mysterious, comedic?",
     "Describe the setting: time period, location, and world details.",
     "What is the central tension or mystery that drives the story?",
     "What themes are most important to explore in this game?",
+    _SAFETY_TOOLS_QUESTION,
 ]
 
 
@@ -82,7 +88,7 @@ async def _load_game_with_session0(game_id: int, db: AsyncSession) -> Game:
 
 
 async def _seed_defaults(game: Game, db: AsyncSession) -> None:
-    """Create the five default prompts for a game if none exist."""
+    """Create the six default prompts for a game if none exist."""
     for i, question in enumerate(_DEFAULT_PROMPTS):
         status = PromptStatus.active if i == 0 else PromptStatus.pending
         db.add(
@@ -91,6 +97,7 @@ async def _seed_defaults(game: Game, db: AsyncSession) -> None:
                 order=i,
                 question=question,
                 is_default=True,
+                is_safety_tools=(question is _SAFETY_TOOLS_QUESTION),
                 status=status,
             )
         )
@@ -179,6 +186,17 @@ async def session0_prompt(
 
     my_response = next((r for r in prompt.responses if r.user_id == current_user.id), None)
 
+    # Load safety tools when viewing the safety tools step
+    safety_tools: list[GameSafetyTool] = []
+    if prompt.is_safety_tools:
+        tools_result = await db.execute(
+            select(GameSafetyTool)
+            .where(GameSafetyTool.game_id == game_id)
+            .options(selectinload(GameSafetyTool.user))
+            .order_by(GameSafetyTool.created_at)
+        )
+        safety_tools = list(tools_result.scalars().all())
+
     return templates.TemplateResponse(
         request,
         "session0_wizard.html",
@@ -189,7 +207,9 @@ async def session0_prompt(
             "responses": prompt.responses,
             "my_response": my_response,
             "current_member": current_member,
+            "current_user": current_user,
             "all_done": _all_done(list(game.session0_prompts)),
+            "safety_tools": safety_tools,
         },
     )
 
@@ -353,6 +373,39 @@ async def skip_prompt(
 
     prompt.status = PromptStatus.skipped
 
+    next_prompt = _advance_wizard(list(game.session0_prompts), after_order=prompt.order)
+    await db.commit()
+
+    if next_prompt:
+        return RedirectResponse(url=f"/games/{game_id}/session0/{next_prompt.id}", status_code=303)
+    return RedirectResponse(url=f"/games/{game_id}/session0/{prompt_id}", status_code=303)
+
+
+@router.post("/games/{game_id}/session0/{prompt_id}/mark-done", response_class=RedirectResponse)
+async def mark_safety_tools_done(
+    game_id: int,
+    prompt_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Mark the safety tools prompt complete and advance the wizard (organizer only)."""
+    game = await _load_game_with_session0(game_id, db)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can advance the wizard")
+
+    prompt = next((p for p in game.session0_prompts if p.id == prompt_id), None)
+    if prompt is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    if not prompt.is_safety_tools:
+        raise HTTPException(status_code=400, detail="This route is only for the safety tools step")
+
+    prompt.status = PromptStatus.complete
     next_prompt = _advance_wizard(list(game.session0_prompts), after_order=prompt.order)
     await db.commit()
 
