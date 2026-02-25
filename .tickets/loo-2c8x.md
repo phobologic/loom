@@ -1,6 +1,6 @@
 ---
 id: loo-2c8x
-status: open
+status: closed
 deps: [loo-ad8u]
 links: []
 created: 2026-02-25T01:22:41Z

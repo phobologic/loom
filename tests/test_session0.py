@@ -1,0 +1,432 @@
+"""Tests for Session 0 wizard routes."""
+
+from __future__ import annotations
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from loom.database import Base, get_db
+from loom.main import _DEV_USERS, app
+from loom.models import (
+    Game,
+    GameMember,
+    GameStatus,
+    MemberRole,
+    PromptStatus,
+    Session0Prompt,
+    Session0Response,
+    User,
+)
+
+# Set by the client fixture; safe for serial test execution.
+_test_session_factory: async_sessionmaker | None = None
+
+
+@pytest.fixture
+async def client():
+    global _test_session_factory
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    _test_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with _test_session_factory() as db:
+        for name in _DEV_USERS:
+            db.add(User(display_name=name))
+        await db.commit()
+
+    async def override_get_db():
+        async with _test_session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+
+    app.dependency_overrides.pop(get_db, None)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+    _test_session_factory = None
+
+
+async def _login(client: AsyncClient, user_id: int) -> None:
+    """Log in as a specific user by ID."""
+    await client.post("/dev/login", data={"user_id": str(user_id)}, follow_redirects=False)
+
+
+async def _create_game(client: AsyncClient, name: str = "Test Game", pitch: str = "") -> int:
+    """Create a game as the currently logged-in user; return game id."""
+    response = await client.post(
+        "/games", data={"name": name, "pitch": pitch}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    location = response.headers["location"]
+    return int(location.rsplit("/", 1)[-1])
+
+
+async def _join_game(client: AsyncClient, game_id: int) -> None:
+    """Have the currently logged-in user join a game by ID (directly in DB)."""
+    # Placeholder — use _add_member directly instead
+
+
+async def _add_member(game_id: int, user_id: int, role: MemberRole = MemberRole.player) -> None:
+    """Directly insert a game member into the DB."""
+    async with _test_session_factory() as db:
+        db.add(GameMember(game_id=game_id, user_id=user_id, role=role))
+        await db.commit()
+
+
+async def _get_prompts(game_id: int) -> list[Session0Prompt]:
+    """Fetch all session0 prompts for a game, ordered."""
+    async with _test_session_factory() as db:
+        result = await db.execute(
+            select(Session0Prompt)
+            .where(Session0Prompt.game_id == game_id)
+            .order_by(Session0Prompt.order)
+        )
+        return list(result.scalars().all())
+
+
+async def _get_prompt(prompt_id: int) -> Session0Prompt | None:
+    """Fetch a single session0 prompt by ID."""
+    async with _test_session_factory() as db:
+        result = await db.execute(select(Session0Prompt).where(Session0Prompt.id == prompt_id))
+        return result.scalar_one_or_none()
+
+
+async def _get_responses(prompt_id: int) -> list[Session0Response]:
+    """Fetch all responses for a prompt."""
+    async with _test_session_factory() as db:
+        result = await db.execute(
+            select(Session0Response).where(Session0Response.prompt_id == prompt_id)
+        )
+        return list(result.scalars().all())
+
+
+class TestSession0WizardInit:
+    async def test_wizard_redirects_to_first_prompt(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        response = await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        assert response.status_code == 303
+        assert f"/games/{game_id}/session0/" in response.headers["location"]
+
+    async def test_wizard_seeds_default_prompts(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        prompts = await _get_prompts(game_id)
+        assert len(prompts) == 5
+        assert prompts[0].status == PromptStatus.active
+        assert all(p.status == PromptStatus.pending for p in prompts[1:])
+
+    async def test_wizard_requires_membership(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await _login(client, 2)  # Bob is not a member
+        response = await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        assert response.status_code == 403
+
+    async def test_wizard_requires_auth(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        # Log out by clearing session
+        await client.post("/dev/logout", follow_redirects=False)
+        response = await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        assert response.status_code == 302
+
+
+class TestSession0PromptView:
+    async def _setup(self, client: AsyncClient) -> tuple[int, int]:
+        """Create game, seed prompts, return (game_id, first_prompt_id)."""
+        await _login(client, 1)
+        game_id = await _create_game(client, pitch="A noir mystery game")
+        r = await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        prompt_id = int(r.headers["location"].rsplit("/", 1)[-1])
+        return game_id, prompt_id
+
+    async def test_shows_question_text(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        response = await client.get(f"/games/{game_id}/session0/{prompt_id}")
+        assert response.status_code == 200
+        assert "genre" in response.text.lower() or "aesthetic" in response.text.lower()
+
+    async def test_shows_pitch_context(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        response = await client.get(f"/games/{game_id}/session0/{prompt_id}")
+        assert "noir mystery game" in response.text
+
+    async def test_shows_all_prompts_in_sidebar(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        response = await client.get(f"/games/{game_id}/session0/{prompt_id}")
+        assert response.text.count("/session0/") >= 5
+
+    async def test_shows_response_form_when_active(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        response = await client.get(f"/games/{game_id}/session0/{prompt_id}")
+        assert 'name="content"' in response.text
+
+    async def test_no_response_form_when_skipped(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        await client.post(f"/games/{game_id}/session0/{prompt_id}/skip", follow_redirects=False)
+        response = await client.get(f"/games/{game_id}/session0/{prompt_id}")
+        assert 'name="content"' not in response.text
+
+
+class TestSession0Respond:
+    async def _setup(self, client: AsyncClient) -> tuple[int, int]:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        r = await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        prompt_id = int(r.headers["location"].rsplit("/", 1)[-1])
+        return game_id, prompt_id
+
+    async def test_player_can_submit_response(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        response = await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/respond",
+            data={"content": "Dark noir with gothic elements"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        responses = await _get_responses(prompt_id)
+        assert len(responses) == 1
+        assert responses[0].content == "Dark noir with gothic elements"
+
+    async def test_player_can_update_response(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/respond",
+            data={"content": "First response"},
+            follow_redirects=False,
+        )
+        await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/respond",
+            data={"content": "Updated response"},
+            follow_redirects=False,
+        )
+        responses = await _get_responses(prompt_id)
+        assert len(responses) == 1
+        assert responses[0].content == "Updated response"
+
+    async def test_response_visible_to_other_players(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        await _add_member(game_id, 2)
+
+        # Alice submits
+        await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/respond",
+            data={"content": "Alice contribution to the genre"},
+            follow_redirects=False,
+        )
+
+        # Bob views the prompt
+        await _login(client, 2)
+        response = await client.get(f"/games/{game_id}/session0/{prompt_id}")
+        assert "Alice contribution to the genre" in response.text
+
+    async def test_cannot_respond_to_non_active_prompt(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        # Skip the prompt (moves it to skipped status)
+        await client.post(f"/games/{game_id}/session0/{prompt_id}/skip", follow_redirects=False)
+        response = await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/respond",
+            data={"content": "Too late"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+
+class TestSession0OrganizerControls:
+    async def _setup(self, client: AsyncClient) -> tuple[int, int]:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        r = await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        prompt_id = int(r.headers["location"].rsplit("/", 1)[-1])
+        return game_id, prompt_id
+
+    async def test_skip_advances_wizard(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        response = await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/skip", follow_redirects=False
+        )
+        assert response.status_code == 303
+        prompt = await _get_prompt(prompt_id)
+        assert prompt.status == PromptStatus.skipped
+        prompts = await _get_prompts(game_id)
+        active = [p for p in prompts if p.status == PromptStatus.active]
+        assert len(active) == 1
+
+    async def test_player_cannot_skip(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        await _add_member(game_id, 2)
+        await _login(client, 2)
+        response = await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/skip", follow_redirects=False
+        )
+        assert response.status_code == 403
+
+    async def test_synthesize_stores_synthesis(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/respond",
+            data={"content": "Dark fantasy with steampunk aesthetics"},
+            follow_redirects=False,
+        )
+        response = await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/synthesize", follow_redirects=False
+        )
+        assert response.status_code == 303
+        prompt = await _get_prompt(prompt_id)
+        assert prompt.synthesis is not None
+        assert len(prompt.synthesis) > 0
+        assert prompt.synthesis_accepted is False
+
+    async def test_player_cannot_synthesize(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        await _add_member(game_id, 2)
+        await _login(client, 2)
+        response = await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/synthesize", follow_redirects=False
+        )
+        assert response.status_code == 403
+
+    async def test_accept_marks_prompt_complete(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/synthesize", follow_redirects=False
+        )
+        response = await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/accept", follow_redirects=False
+        )
+        assert response.status_code == 303
+        prompt = await _get_prompt(prompt_id)
+        assert prompt.status == PromptStatus.complete
+        assert prompt.synthesis_accepted is True
+        # Next prompt should be active
+        prompts = await _get_prompts(game_id)
+        active = [p for p in prompts if p.status == PromptStatus.active]
+        assert len(active) == 1
+        assert active[0].id != prompt_id
+
+    async def test_regenerate_overwrites_synthesis(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/synthesize", follow_redirects=False
+        )
+        first = (await _get_prompt(prompt_id)).synthesis
+        response = await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/regenerate", follow_redirects=False
+        )
+        assert response.status_code == 303
+        prompt = await _get_prompt(prompt_id)
+        # Stub returns same text, but synthesis should still be set and accepted=False
+        assert prompt.synthesis == first
+        assert prompt.synthesis_accepted is False
+
+    async def test_add_custom_prompt(self, client: AsyncClient) -> None:
+        game_id, _ = await self._setup(client)
+        response = await client.post(
+            f"/games/{game_id}/session0/prompts/add",
+            data={"question": "What secret societies exist?"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        prompts = await _get_prompts(game_id)
+        assert len(prompts) == 6
+        custom = prompts[-1]
+        assert custom.is_default is False
+        assert custom.question == "What secret societies exist?"
+
+    async def test_move_prompt_up(self, client: AsyncClient) -> None:
+        game_id, _ = await self._setup(client)
+        prompts = await _get_prompts(game_id)
+        # prompt at order=1 (index 1) is pending — move it up
+        target = prompts[1]
+        original_order = target.order
+        neighbor_order = prompts[0].order
+        response = await client.post(
+            f"/games/{game_id}/session0/prompts/{target.id}/move",
+            data={"direction": "up"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        updated = await _get_prompt(target.id)
+        assert updated.order == neighbor_order
+        updated_neighbor = await _get_prompt(prompts[0].id)
+        assert updated_neighbor.order == original_order
+
+    async def test_move_first_prompt_up_is_noop(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        prompts = await _get_prompts(game_id)
+        # The first prompt is 'active', can't be moved; use a pending one at order=1
+        target = prompts[1]
+        await client.post(
+            f"/games/{game_id}/session0/prompts/{target.id}/move",
+            data={"direction": "up"},
+            follow_redirects=False,
+        )
+        await client.post(
+            f"/games/{game_id}/session0/prompts/{target.id}/move",
+            data={"direction": "up"},
+            follow_redirects=False,
+        )
+        # After two up moves from order=1 we should be at boundary; order shouldn't go negative
+        updated = await _get_prompt(target.id)
+        assert updated.order >= 0
+
+    async def test_cannot_move_complete_prompt(self, client: AsyncClient) -> None:
+        game_id, prompt_id = await self._setup(client)
+        # Complete the first prompt
+        await client.post(
+            f"/games/{game_id}/session0/{prompt_id}/synthesize", follow_redirects=False
+        )
+        await client.post(f"/games/{game_id}/session0/{prompt_id}/accept", follow_redirects=False)
+        response = await client.post(
+            f"/games/{game_id}/session0/prompts/{prompt_id}/move",
+            data={"direction": "down"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+
+class TestSession0Completion:
+    async def _setup(self, client: AsyncClient) -> int:
+        await _login(client, 1)
+        return await _create_game(client)
+
+    async def _skip_all(self, client: AsyncClient, game_id: int) -> None:
+        """Seed and skip all prompts."""
+        await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        while True:
+            prompts = await _get_prompts(game_id)
+            active = next((p for p in prompts if p.status == PromptStatus.active), None)
+            if active is None:
+                break
+            r = await client.post(
+                f"/games/{game_id}/session0/{active.id}/skip", follow_redirects=False
+            )
+            assert r.status_code == 303
+
+    async def test_complete_session0_advances_game_status(self, client: AsyncClient) -> None:
+        game_id = await self._setup(client)
+        await self._skip_all(client, game_id)
+        response = await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/games/{game_id}"
+        async with _test_session_factory() as db:
+            result = await db.execute(select(Game).where(Game.id == game_id))
+            game = result.scalar_one()
+        assert game.status == GameStatus.active
+
+    async def test_cannot_complete_with_pending_prompts(self, client: AsyncClient) -> None:
+        game_id = await self._setup(client)
+        # Seed but don't complete all
+        await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        response = await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
+        assert response.status_code == 403

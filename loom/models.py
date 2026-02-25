@@ -104,6 +104,15 @@ class BeatSignificanceThreshold(str, enum.Enum):
     minimal = "minimal"
 
 
+class PromptStatus(str, enum.Enum):
+    """Lifecycle status of a Session 0 prompt."""
+
+    pending = "pending"  # not yet reached
+    active = "active"  # collecting contributions now
+    skipped = "skipped"  # organizer skipped
+    complete = "complete"  # synthesis accepted
+
+
 # ---------------------------------------------------------------------------
 # Timestamp mixin
 # ---------------------------------------------------------------------------
@@ -212,6 +221,11 @@ class Game(TimestampMixin, Base):
         back_populates="game",
         foreign_keys="Character.game_id",
         cascade="all, delete-orphan",
+    )
+    session0_prompts: Mapped[list[Session0Prompt]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
+        order_by="Session0Prompt.order",
     )
 
 
@@ -386,3 +400,45 @@ class Character(TimestampMixin, Base):
     scenes_present: Mapped[list[Scene]] = relationship(
         secondary=scene_characters, back_populates="characters_present"
     )
+
+
+class Session0Prompt(TimestampMixin, Base):
+    """A single prompt in a game's Session 0 wizard."""
+
+    __tablename__ = "session0_prompts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    order: Mapped[int] = mapped_column(Integer, nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    status: Mapped[PromptStatus] = mapped_column(
+        Enum(PromptStatus, native_enum=False), nullable=False, default=PromptStatus.pending
+    )
+    synthesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    synthesis_accepted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    game: Mapped[Game] = relationship(back_populates="session0_prompts")
+    responses: Mapped[list[Session0Response]] = relationship(
+        back_populates="prompt", cascade="all, delete-orphan"
+    )
+
+
+class Session0Response(TimestampMixin, Base):
+    """A player's contribution to a Session 0 prompt."""
+
+    __tablename__ = "session0_responses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    prompt_id: Mapped[int] = mapped_column(
+        ForeignKey("session0_prompts.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    prompt: Mapped[Session0Prompt] = relationship(back_populates="responses")
+    user: Mapped[User | None] = relationship()
+
+    __table_args__ = (UniqueConstraint("prompt_id", "user_id", name="uq_session0_response"),)

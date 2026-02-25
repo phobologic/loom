@@ -10,8 +10,19 @@
     <strong>Nav:</strong>
     <a href="#" aria-disabled="true">Acts</a> |
     <a href="/games/{{ game.id }}/settings">Settings</a> |
+    {% if game.status.value == "setup" %}<a href="/games/{{ game.id }}/session0">Session 0</a> | {% endif %}
     <a href="#" aria-disabled="true">World Doc</a>
 </nav>
+
+{% if game.status.value == "setup" %}
+<section style="margin-top:1rem; padding:0.75rem; border:1px solid #ccc;">
+  <h2>Session 0</h2>
+  <p>Establish the world collaboratively before play begins.</p>
+  <a href="/games/{{ game.id }}/session0">
+    {% if current_member.role.value == "organizer" %}Run Session 0 Wizard{% else %}Contribute to Session 0{% endif %}
+  </a>
+</section>
+{% endif %}
 
 <h2>Members ({{ members | length }}/{{ max_players }})</h2>
 <ul>

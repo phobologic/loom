@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}{{ game.name }} — Session 0 — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }} — Session 0</h1>
+
+{% if game.pitch %}
+<section>
+  <strong>Starting pitch:</strong>
+  <p>{{ game.pitch }}</p>
+</section>
+{% endif %}
+
+<div style="display:flex; gap:2rem; align-items:flex-start; margin-top:1rem;">
+
+  <!-- Sidebar: prompt list -->
+  <aside style="min-width:220px; max-width:260px;">
+    <h3>Prompts</h3>
+    <ol style="padding-left:1.2rem;">
+      {% for p in all_prompts %}
+      <li style="margin-bottom:0.4rem; {% if p.id == prompt.id %}font-weight:bold;{% endif %}">
+        <a href="/games/{{ game.id }}/session0/{{ p.id }}">{{ p.question | truncate(45) }}</a>
+        <small>[{{ p.status.value }}]</small>
+
+        {% if current_member.role.value == "organizer" and p.status.value == "pending" %}
+        <form method="post" action="/games/{{ game.id }}/session0/prompts/{{ p.id }}/move" style="display:inline;">
+          <input type="hidden" name="direction" value="up">
+          <button type="submit" style="padding:0 4px; font-size:0.75rem;"
+            {% if loop.first %}disabled{% endif %}>▲</button>
+        </form>
+        <form method="post" action="/games/{{ game.id }}/session0/prompts/{{ p.id }}/move" style="display:inline;">
+          <input type="hidden" name="direction" value="down">
+          <button type="submit" style="padding:0 4px; font-size:0.75rem;"
+            {% if loop.last %}disabled{% endif %}>▼</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+
+    {% if current_member.role.value == "organizer" %}
+    <form method="post" action="/games/{{ game.id }}/session0/prompts/add" style="margin-top:1rem;">
+      <label for="custom_question"><strong>Add custom prompt:</strong></label><br>
+      <input type="text" id="custom_question" name="question" placeholder="Your question..." style="width:100%; box-sizing:border-box;" required>
+      <button type="submit" style="margin-top:0.3rem;">Add</button>
+    </form>
+    {% endif %}
+  </aside>
+
+  <!-- Main panel -->
+  <main style="flex:1;">
+    <h2>{{ prompt.question }}</h2>
+    <p><strong>Status:</strong> {{ prompt.status.value | capitalize }}</p>
+
+    <!-- Contributions -->
+    <section>
+      <h3>Contributions</h3>
+      {% if responses %}
+      <ul>
+        {% for r in responses %}
+        <li><strong>{{ r.user.display_name if r.user else "Anonymous" }}:</strong> {{ r.content }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p><em>No contributions yet.</em></p>
+      {% endif %}
+    </section>
+
+    <!-- My contribution form — only when prompt is active -->
+    {% if prompt.status.value == "active" %}
+    <section style="margin-top:1rem;">
+      <h3>{% if my_response %}Update your contribution{% else %}Add your contribution{% endif %}</h3>
+      <form method="post" action="/games/{{ game.id }}/session0/{{ prompt.id }}/respond">
+        <textarea name="content" rows="4" style="width:100%; box-sizing:border-box;" required>{{ my_response.content if my_response else "" }}</textarea><br>
+        <button type="submit" style="margin-top:0.3rem;">
+          {% if my_response %}Update{% else %}Submit{% endif %}
+        </button>
+      </form>
+    </section>
+    {% endif %}
+
+    <!-- Synthesis block -->
+    {% if prompt.synthesis %}
+    <section style="margin-top:1rem;">
+      <h3>AI Synthesis</h3>
+      <blockquote style="border-left:3px solid #ccc; padding-left:1rem; margin-left:0;">{{ prompt.synthesis }}</blockquote>
+
+      {% if current_member.role.value == "organizer" and prompt.synthesis_accepted == false %}
+      <div style="margin-top:0.5rem;">
+        <form method="post" action="/games/{{ game.id }}/session0/{{ prompt.id }}/accept" style="display:inline;">
+          <button type="submit">Accept synthesis</button>
+        </form>
+        <form method="post" action="/games/{{ game.id }}/session0/{{ prompt.id }}/regenerate" style="display:inline; margin-left:0.5rem;">
+          <button type="submit">Regenerate</button>
+        </form>
+      </div>
+      {% elif prompt.synthesis_accepted %}
+      <p><em>Synthesis accepted.</em></p>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    <!-- Organizer controls -->
+    {% if current_member.role.value == "organizer" and prompt.status.value == "active" %}
+    <section style="margin-top:1rem; border-top:1px solid #ddd; padding-top:1rem;">
+      <h3>Organizer controls</h3>
+      {% if not prompt.synthesis %}
+      <form method="post" action="/games/{{ game.id }}/session0/{{ prompt.id }}/synthesize" style="display:inline;">
+        <button type="submit">Synthesize contributions</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/games/{{ game.id }}/session0/{{ prompt.id }}/skip" style="display:inline; margin-left:0.5rem;">
+        <button type="submit">Skip this prompt</button>
+      </form>
+    </section>
+    {% endif %}
+
+    {% if prompt.status.value == "skipped" %}
+    <p style="margin-top:1rem;"><em>This prompt was skipped.</em></p>
+    {% endif %}
+
+    {% if prompt.status.value == "complete" %}
+    <p style="margin-top:1rem;"><em>This prompt is complete.</em></p>
+    {% endif %}
+
+    <!-- Complete Session 0 button -->
+    {% if current_member.role.value == "organizer" and all_done %}
+    <section style="margin-top:2rem; border-top:2px solid #333; padding-top:1rem;">
+      <h3>Session 0 complete!</h3>
+      <p>All prompts are done. Ready to start the game?</p>
+      <form method="post" action="/games/{{ game.id }}/session0/complete">
+        <button type="submit">Complete Session 0 and start game</button>
+      </form>
+    </section>
+    {% endif %}
+
+  </main>
+</div>
+
+<p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}">&larr; Game Dashboard</a></p>
+{% endblock %}
