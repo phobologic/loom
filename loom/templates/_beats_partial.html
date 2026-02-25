@@ -49,6 +49,83 @@
     {% if not beat.events %}
     <p style="margin:0.25rem 0 0; color:#aaa; font-style:italic; font-size:0.85rem;">(no events)</p>
     {% endif %}
+
+    {# Voting panel for major beats pending approval #}
+    {% if beat_proposals is defined %}
+    {% set proposal = beat_proposals.get(beat.id) %}
+    {% if proposal and proposal.status.value == 'open' %}
+    <div style="margin-top:0.75rem; padding:0.6rem 0.75rem; border:1px solid #e8a020; border-radius:4px; background:#fffbf0;">
+      <p style="margin:0 0 0.35rem; font-size:0.85rem; font-weight:bold; color:#c07800;">
+        Major beat &mdash; awaiting vote
+      </p>
+
+      {% if proposal.expires_at and now is defined %}
+      {% set secs = ((proposal.expires_at - now).total_seconds()) | int %}
+      <p style="font-size:0.8rem; color:#888; margin:0 0 0.35rem;">
+        Auto-approves in
+        {% if secs > 3600 %}~{{ (secs / 3600) | int }}h
+        {% elif secs > 60 %}~{{ (secs / 60) | int }}m
+        {% else %}imminently{% endif %}
+      </p>
+      {% endif %}
+
+      {% if beat_vote_counts is defined %}
+      {% set vc = beat_vote_counts.get(beat.id, {}) %}
+      <p style="font-size:0.85rem; margin:0 0 0.35rem;">
+        {{ vc.get('yes', 0) }} yes &middot; {{ vc.get('no', 0) }} no &middot; {{ vc.get('suggest', 0) }} suggestion(s)
+      </p>
+      {% endif %}
+
+      {% if proposal.votes %}
+      <ul style="margin:0 0 0.5rem; padding-left:1.2rem; font-size:0.85rem;">
+        {% for v in proposal.votes %}
+        <li>
+          <strong>{{ v.voter.display_name if v.voter else "Anonymous" }}:</strong>
+          {{ v.choice.value | replace("_", " ") | capitalize }}
+          {% if v.suggestion %}<br><em style="color:#555;">{{ v.suggestion }}</em>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      {% if beat_my_votes is defined %}
+      {% set my_vote = beat_my_votes.get(beat.id) %}
+      {% if not my_vote %}
+      <form method="post" action="/games/{{ game.id }}/proposals/{{ proposal.id }}/vote">
+        <fieldset style="border:none; padding:0; margin:0;">
+          <label style="display:block; margin:0.2rem 0; font-size:0.85rem;">
+            <input type="radio" name="choice" value="yes" required> Yes, approve
+          </label>
+          <label style="display:block; margin:0.2rem 0; font-size:0.85rem;">
+            <input type="radio" name="choice" value="no"> No, reject
+          </label>
+          <label style="display:block; margin:0.2rem 0; font-size:0.85rem;">
+            <input type="radio" name="choice" value="suggest_modification"> Suggest modification
+          </label>
+          <div style="margin-top:0.4rem;">
+            <textarea name="suggestion" rows="2" style="width:100%; max-width:32rem; font-size:0.85rem;"
+              placeholder="Required for suggest modification"></textarea>
+          </div>
+          <button type="submit" style="margin-top:0.4rem; font-size:0.85rem;">Cast vote</button>
+        </fieldset>
+      </form>
+      {% else %}
+      <p style="font-size:0.85rem; margin:0;">
+        Your vote: <strong>{{ my_vote.choice.value | replace("_", " ") | capitalize }}</strong>
+        {% if my_vote.suggestion %} &mdash; <em>{{ my_vote.suggestion }}</em>{% endif %}
+      </p>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% elif proposal and proposal.status.value == 'approved' and beat.status.value == 'canon' %}
+      {% if proposal.votes | length == 1 %}
+      <p style="font-size:0.8rem; color:#2a7a2a; margin:0.35rem 0 0;">
+        &#10003; Auto-approved (silence timer)
+      </p>
+      {% endif %}
+    {% endif %}
+    {% endif %}
+
   </li>
   {% endfor %}
 </ol>

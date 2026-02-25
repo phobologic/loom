@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
@@ -14,15 +17,13 @@ from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
     Act,
+    BeatStatus,
     Game,
     GameMember,
     GameStatus,
-    MemberRole,
     ProposalStatus,
     ProposalType,
-    Scene,
     Session0Prompt,
-    Session0Response,
     User,
     Vote,
     VoteChoice,
@@ -81,6 +82,7 @@ async def _load_game_for_voting(game_id: int, db: AsyncSession) -> Game | None:
             selectinload(Game.proposals).selectinload(VoteProposal.proposed_by),
             selectinload(Game.proposals).selectinload(VoteProposal.act),
             selectinload(Game.proposals).selectinload(VoteProposal.scene),
+            selectinload(Game.proposals).selectinload(VoteProposal.beat),
         )
     )
     return result.scalar_one_or_none()
@@ -257,6 +259,10 @@ async def cast_vote(
     if proposal is None:
         raise HTTPException(status_code=404, detail="Proposal not found")
 
+    # loo-4ur6: defense-in-depth — ensure proposal belongs to this game
+    if proposal.game_id != game_id:
+        raise HTTPException(status_code=403, detail="Proposal does not belong to this game")
+
     if proposal.status != ProposalStatus.open:
         raise HTTPException(status_code=403, detail="This proposal is no longer open")
 
@@ -265,18 +271,27 @@ async def cast_vote(
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid vote choice")
 
-    existing = next((v for v in proposal.votes if v.voter_id == current_user.id), None)
-    if existing is not None:
-        raise HTTPException(status_code=409, detail="You have already voted on this proposal")
-
     new_vote = Vote(
         proposal_id=proposal_id,
         voter_id=current_user.id,
         choice=vote_choice,
         suggestion=suggestion.strip() or None,
     )
-    db.add(new_vote)
     proposal.votes.append(new_vote)
+
+    # loo-p1mt: use DB UniqueConstraint to guard against concurrent duplicate votes
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="You have already voted on this proposal")
+
+    # Reset silence timer if a modification is suggested on a beat proposal
+    if (
+        vote_choice == VoteChoice.suggest_modification
+        and proposal.proposal_type == ProposalType.beat_proposal
+    ):
+        proposal.expires_at = datetime.now(timezone.utc) + timedelta(hours=game.silence_timer_hours)
 
     total_players = len(game.members)
     yes_count = sum(1 for v in proposal.votes if v.choice == VoteChoice.yes)
@@ -291,6 +306,8 @@ async def cast_vote(
             act = next((a for a in game.acts if a.id == proposal.scene.act_id), None)
             if act is not None:
                 activate_scene(act.scenes, proposal.scene)
+        elif proposal.proposal_type == ProposalType.beat_proposal and proposal.beat is not None:
+            proposal.beat.status = BeatStatus.canon
 
     await db.commit()
 
@@ -300,4 +317,12 @@ async def cast_vote(
         return RedirectResponse(
             url=f"/games/{game_id}/acts/{proposal.scene.act_id}/scenes", status_code=303
         )
+    if proposal.proposal_type == ProposalType.beat_proposal and proposal.beat is not None:
+        beat = proposal.beat
+        scene_id = beat.scene_id
+        act = next((a for a in game.acts if any(s.id == scene_id for s in a.scenes)), None)
+        if act is not None:
+            return RedirectResponse(
+                url=f"/games/{game_id}/acts/{act.id}/scenes/{scene_id}", status_code=303
+            )
     return RedirectResponse(url=f"/games/{game_id}/world-document", status_code=303)

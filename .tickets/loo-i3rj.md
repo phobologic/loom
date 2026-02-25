@@ -1,6 +1,6 @@
 ---
 id: loo-i3rj
-status: open
+status: closed
 deps: [loo-bybi]
 links: []
 created: 2026-02-25T01:22:43Z

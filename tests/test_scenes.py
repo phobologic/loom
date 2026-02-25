@@ -1154,7 +1154,8 @@ class TestBeatSignificanceClassification:
         assert beats[0].status == BeatStatus.canon
 
     async def test_major_beat_enters_proposed_status(self, client: AsyncClient) -> None:
-        game_id = await _create_active_game(client)
+        # Needs 2 players: proposer's implicit yes (1/2) does not meet threshold (>1).
+        game_id = await _create_active_game(client, extra_members=[2])
         act_id = await _create_active_act(game_id)
         scene_id = await _create_active_scene(act_id, game_id)
 
@@ -1170,6 +1171,25 @@ class TestBeatSignificanceClassification:
         beats = await _get_beats(scene_id)
         assert beats[0].significance.value == "major"
         assert beats[0].status == BeatStatus.proposed
+
+    async def test_major_beat_single_player_auto_approves(self, client: AsyncClient) -> None:
+        # Single-player: proposer's implicit yes (1/1) exceeds threshold (>0.5) → auto-canon.
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={
+                "event_type": "narrative",
+                "event_content": "A solo revelation.",
+                "beat_significance": "major",
+            },
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert beats[0].significance.value == "major"
+        assert beats[0].status == BeatStatus.canon
 
     async def test_default_significance_is_minor(self, client: AsyncClient) -> None:
         """No beat_significance field defaults to minor (AI stub always returns minor)."""

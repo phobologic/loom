@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -9,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
-from loom.ai.stubs import classify_beat_significance
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.dice import DiceError
@@ -58,6 +59,15 @@ async def _load_scene_for_view(scene_id: int, db: AsyncSession) -> Scene | None:
         .where(Scene.id == scene_id)
         .options(
             selectinload(Scene.act).selectinload(Act.game).selectinload(Game.members),
+            selectinload(Scene.act)
+            .selectinload(Act.game)
+            .selectinload(Game.proposals)
+            .selectinload(VoteProposal.votes)
+            .selectinload(Vote.voter),
+            selectinload(Scene.act)
+            .selectinload(Act.game)
+            .selectinload(Game.proposals)
+            .selectinload(VoteProposal.proposed_by),
             selectinload(Scene.characters_present),
             selectinload(Scene.beats).selectinload(Beat.author),
             selectinload(Scene.beats).selectinload(Beat.events),
@@ -73,6 +83,52 @@ def _apply_beat_filter(beats: list[Beat], filter_val: str) -> list[Beat]:
     if filter_val == "ooc":
         return [b for b in beats if any(e.type.value in _OOC_EVENT_TYPES for e in b.events)]
     return beats
+
+
+async def _resolve_beat_proposals(
+    scene: Scene,
+    current_user_id: int,
+    db: AsyncSession,
+) -> tuple[dict, dict, dict]:
+    """Check silence timer expiry and build beat-proposal context dicts.
+
+    Returns:
+        (beat_proposals, vote_counts, my_votes) where:
+        - beat_proposals: {beat_id: VoteProposal} for all beat proposals on this game
+        - vote_counts: {beat_id: {"yes": int, "no": int, "suggest": int}}
+        - my_votes: {beat_id: Vote | None} for the current user
+    """
+    game = scene.act.game
+    now = datetime.now(timezone.utc)
+
+    beat_proposals: dict[int, VoteProposal] = {
+        p.beat_id: p
+        for p in game.proposals
+        if p.proposal_type == ProposalType.beat_proposal and p.beat_id is not None
+    }
+
+    any_expired = False
+    for beat in scene.beats:
+        if beat.status == BeatStatus.proposed:
+            p = beat_proposals.get(beat.id)
+            if p and p.status == ProposalStatus.open and p.expires_at and now >= p.expires_at:
+                p.status = ProposalStatus.approved
+                beat.status = BeatStatus.canon
+                any_expired = True
+    if any_expired:
+        await db.commit()
+
+    vote_counts: dict[int, dict] = {}
+    my_votes: dict[int, Vote | None] = {}
+    for beat_id, p in beat_proposals.items():
+        vote_counts[beat_id] = {
+            "yes": sum(1 for v in p.votes if v.choice == VoteChoice.yes),
+            "no": sum(1 for v in p.votes if v.choice == VoteChoice.no),
+            "suggest": sum(1 for v in p.votes if v.choice == VoteChoice.suggest_modification),
+        }
+        my_votes[beat_id] = next((v for v in p.votes if v.voter_id == current_user_id), None)
+
+    return beat_proposals, vote_counts, my_votes
 
 
 async def _load_game_for_scenes(game_id: int, db: AsyncSession) -> Game | None:
@@ -265,7 +321,7 @@ async def scene_detail(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    """Show the scene play view: scene info, beat timeline with HTMX polling, and filter controls."""
+    """Show the scene play view: beat timeline with HTMX polling and filter controls."""
     scene = await _load_scene_for_view(scene_id, db)
     if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
         raise HTTPException(status_code=404, detail="Scene not found")
@@ -283,6 +339,11 @@ async def scene_detail(
     beats = sorted(scene.beats, key=lambda b: b.order)
     filtered_beats = _apply_beat_filter(beats, filter)
 
+    beat_proposals, beat_vote_counts, beat_my_votes = await _resolve_beat_proposals(
+        scene, current_user.id, db
+    )
+    now = datetime.now(timezone.utc)
+
     return templates.TemplateResponse(
         request,
         "scene_detail.html",
@@ -292,6 +353,12 @@ async def scene_detail(
             "scene": scene,
             "beats": filtered_beats,
             "filter": filter,
+            "beat_proposals": beat_proposals,
+            "beat_vote_counts": beat_vote_counts,
+            "beat_my_votes": beat_my_votes,
+            "current_user_id": current_user.id,
+            "total_players": len(game.members),
+            "now": now,
         },
     )
 
@@ -410,6 +477,29 @@ async def submit_beat(
             )
         db.add(event)
 
+    if significance == BeatSignificance.major:
+        total_players = len(game.members)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=game.silence_timer_hours)
+        proposal = VoteProposal(
+            game_id=game.id,
+            proposal_type=ProposalType.beat_proposal,
+            proposed_by_id=current_user.id,
+            beat_id=beat.id,
+            expires_at=expires_at,
+        )
+        db.add(proposal)
+        await db.flush()
+        db.add(
+            Vote(
+                proposal_id=proposal.id,
+                voter_id=current_user.id,
+                choice=VoteChoice.yes,
+            )
+        )
+        if is_approved(1, total_players):
+            proposal.status = ProposalStatus.approved
+            beat.status = BeatStatus.canon
+
     await db.commit()
 
     return RedirectResponse(
@@ -444,10 +534,23 @@ async def beats_partial(
     beats = sorted(scene.beats, key=lambda b: b.order)
     filtered_beats = _apply_beat_filter(beats, filter)
 
+    beat_proposals, beat_vote_counts, beat_my_votes = await _resolve_beat_proposals(
+        scene, current_user.id, db
+    )
+    now = datetime.now(timezone.utc)
+
     return templates.TemplateResponse(
         request,
         "_beats_partial.html",
         {
             "beats": filtered_beats,
+            "beat_proposals": beat_proposals,
+            "beat_vote_counts": beat_vote_counts,
+            "beat_my_votes": beat_my_votes,
+            "current_user_id": current_user.id,
+            "game": scene.act.game,
+            "act": scene.act,
+            "scene": scene,
+            "now": now,
         },
     )
