@@ -1,0 +1,33 @@
+[project]
+name = "loom"
+version = "0.1.0"
+description = "Async-first collaborative GM-less tabletop roleplaying"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]",
+    "jinja2",
+    "python-multipart",
+    "sqlalchemy[asyncio]",
+    "aiosqlite",
+    "alembic",
+    "pydantic-settings",
+    "anthropic",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

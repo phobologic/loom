@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Loom{% endblock %}</title>
+    <!--
+        HTMX real-time strategy (wired in Step 13):
+        Beat timeline containers will use hx-trigger="every 5s" to poll for new beats
+        from other players without a full page reload.
+    -->
+    <script src="https://unpkg.com/htmx.org@2" defer></script>
+</head>
+<body>
+    {% block content %}{% endblock %}
+</body>
+</html>
