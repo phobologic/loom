@@ -13,7 +13,7 @@
     <a href="#" aria-disabled="true">World Doc</a>
 </nav>
 
-<h2>Members ({{ members | length }}/5)</h2>
+<h2>Members ({{ members | length }}/{{ max_players }})</h2>
 <ul>
     {% for m in members %}
     <li>

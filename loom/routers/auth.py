@@ -8,15 +8,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from loom.database import get_db
 from loom.models import User
-
-templates = Jinja2Templates(directory="loom/templates")
+from loom.rendering import templates
 
 router = APIRouter()
 

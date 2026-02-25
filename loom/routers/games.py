@@ -6,7 +6,6 @@ import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,8 +22,7 @@ from loom.models import (
     TieBreakingMethod,
     User,
 )
-
-templates = Jinja2Templates(directory="loom/templates")
+from loom.rendering import templates
 
 router = APIRouter()
 
@@ -112,6 +110,7 @@ async def game_detail(
             "members": game.members,
             "current_member": current_member,
             "invite_url": invite_url,
+            "max_players": MAX_GAME_PLAYERS,
         },
     )
 
@@ -194,7 +193,7 @@ async def join_game(
                 "member_count": current_count,
                 "max_players": MAX_GAME_PLAYERS,
                 "is_full": True,
-                "error": "This game is full (maximum 5 players).",
+                "error": f"This game is full (maximum {MAX_GAME_PLAYERS} players).",
             },
             status_code=409,
         )

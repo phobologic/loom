@@ -1,6 +1,6 @@
 ---
 id: loo-foq7
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-25T02:29:12Z
