@@ -371,7 +371,8 @@ class TestFullGameFlow:
         # Build the full hierarchy
         user = await _make_user(db_session)
         game = await _make_game(db_session)
-        GameMember(game_id=game.id, user_id=user.id, role=MemberRole.organizer)
+        member = GameMember(game_id=game.id, user_id=user.id, role=MemberRole.organizer)
+        db_session.add(member)
         act = await _make_act(db_session, game)
         scene = await _make_scene(db_session, act)
         beat = await _make_beat(db_session, scene, author=user)

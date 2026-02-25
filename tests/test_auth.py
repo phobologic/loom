@@ -2,19 +2,39 @@
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from loom.database import Base, engine
-from loom.main import _DEV_USERS, _seed_dev_users, app
+from loom.database import Base, get_db
+from loom.main import _DEV_USERS, app
+from loom.models import User
 
 
 @pytest.fixture
 async def client():
-    # ASGITransport doesn't trigger the ASGI lifespan, so bootstrap manually.
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    await _seed_dev_users()
+
+    async with session_factory() as db:
+        for name in _DEV_USERS:
+            db.add(User(display_name=name))
+        await db.commit()
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+    app.dependency_overrides.pop(get_db, None)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
 
 
 class TestDevLoginPage:

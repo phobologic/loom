@@ -5,22 +5,45 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from loom.database import AsyncSessionLocal, Base, engine
-from loom.main import _seed_dev_users, app
-from loom.models import Game, GameMember, MemberRole, TieBreakingMethod
+from loom.database import Base, get_db
+from loom.main import _DEV_USERS, app
+from loom.models import Game, GameMember, MemberRole, TieBreakingMethod, User
 from loom.routers.games import MAX_GAME_PLAYERS
+
+# Set by the client fixture; safe for serial test execution.
+_test_session_factory: async_sessionmaker | None = None
 
 
 @pytest.fixture
 async def client():
+    global _test_session_factory
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    _test_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    await _seed_dev_users()
+
+    async with _test_session_factory() as db:
+        for name in _DEV_USERS:
+            db.add(User(display_name=name))
+        await db.commit()
+
+    async def override_get_db():
+        async with _test_session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+    app.dependency_overrides.pop(get_db, None)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+    _test_session_factory = None
 
 
 async def _login(client: AsyncClient, user_id: int) -> None:
@@ -49,7 +72,7 @@ class TestCreateGame:
     async def test_sets_organizer_role(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(
                 select(GameMember).where(
                     GameMember.game_id == game_id,
@@ -62,7 +85,7 @@ class TestCreateGame:
     async def test_generates_invite_token(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             game = result.scalar_one()
         assert game.invite_token is not None
@@ -121,7 +144,7 @@ class TestInviteLanding:
     async def test_shows_game_name(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client, name="Dragon Quest")
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             game = result.scalar_one()
         # Log out so we're not auto-redirected as an existing member
@@ -138,7 +161,7 @@ class TestInviteLanding:
     async def test_already_member_redirects_to_dashboard(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             game = result.scalar_one()
         response = await client.get(f"/invite/{game.invite_token}", follow_redirects=False)
@@ -150,7 +173,7 @@ class TestJoinGame:
     async def test_join_via_invite(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             game = result.scalar_one()
         token = game.invite_token
@@ -163,7 +186,7 @@ class TestJoinGame:
         assert f"/games/{game_id}" in response.headers["location"]
 
         # Verify membership
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(
                 select(GameMember).where(
                     GameMember.game_id == game_id,
@@ -176,7 +199,7 @@ class TestJoinGame:
     async def test_join_already_member_redirects(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             game = result.scalar_one()
         token = game.invite_token
@@ -191,17 +214,13 @@ class TestJoinGame:
     async def test_join_enforces_player_cap(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             game = result.scalar_one()
         token = game.invite_token
 
         # Add members to fill the game
-        from loom.database import AsyncSessionLocal as ASession
-        from loom.models import User
-
-        # Add members 2 through MAX_GAME_PLAYERS using the DB directly
-        async with ASession() as db:
+        async with _test_session_factory() as db:
             for extra_id in range(2, MAX_GAME_PLAYERS + 1):
                 # Make sure the user exists
                 result = await db.execute(select(User).where(User.id == extra_id))
@@ -213,7 +232,7 @@ class TestJoinGame:
 
         # Now try to join as user MAX_GAME_PLAYERS + 1 — game should be full
         # Use a fresh user that doesn't exist yet
-        async with ASession() as db:
+        async with _test_session_factory() as db:
             overflow_user = User(display_name="Overflow")
             db.add(overflow_user)
             await db.commit()
@@ -234,14 +253,14 @@ class TestInviteManagement:
     async def test_regenerate_invite_changes_token(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             original_token = result.scalar_one().invite_token
 
         response = await client.post(f"/games/{game_id}/invite/regenerate", follow_redirects=False)
         assert response.status_code == 303
 
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             new_token = result.scalar_one().invite_token
         assert new_token != original_token
@@ -250,7 +269,7 @@ class TestInviteManagement:
     async def test_regenerate_requires_organizer(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             token = result.scalar_one().invite_token
 
@@ -268,7 +287,7 @@ class TestInviteManagement:
         response = await client.post(f"/games/{game_id}/invite/revoke", follow_redirects=False)
         assert response.status_code == 303
 
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             game = result.scalar_one()
         assert game.invite_token is None
@@ -302,7 +321,7 @@ class TestGameSettings:
     async def test_player_can_view_settings(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             token = result.scalar_one().invite_token
         await client.post("/dev/logout", follow_redirects=False)
@@ -332,7 +351,7 @@ class TestGameSettings:
         assert response.status_code == 303
         assert f"/games/{game_id}/settings" in response.headers["location"]
 
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             game = result.scalar_one()
         assert game.silence_timer_hours == 24
@@ -344,7 +363,7 @@ class TestGameSettings:
     async def test_player_cannot_update_settings(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             token = result.scalar_one().invite_token
         await client.post("/dev/logout", follow_redirects=False)
@@ -367,7 +386,7 @@ class TestInviteManagementRevoke:
     async def test_revoke_requires_organizer(self, client: AsyncClient) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        async with AsyncSessionLocal() as db:
+        async with _test_session_factory() as db:
             result = await db.execute(select(Game).where(Game.id == game_id))
             token = result.scalar_one().invite_token
 

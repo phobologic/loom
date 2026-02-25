@@ -1,6 +1,6 @@
 ---
 id: loo-uk8y
-status: open
+status: closed
 deps: []
 links: [loo-onjn]
 created: 2026-02-25T02:29:22Z
