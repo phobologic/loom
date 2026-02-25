@@ -147,6 +147,13 @@ class VoteChoice(str, enum.Enum):
     suggest_modification = "suggest_modification"
 
 
+class WordSeedWordType(str, enum.Enum):
+    """Whether a word seed is an action/verb or a descriptor/subject."""
+
+    action = "action"
+    descriptor = "descriptor"
+
+
 # ---------------------------------------------------------------------------
 # Timestamp mixin
 # ---------------------------------------------------------------------------
@@ -275,6 +282,10 @@ class Game(TimestampMixin, Base):
         back_populates="game",
         cascade="all, delete-orphan",
         order_by="VoteProposal.created_at",
+    )
+    word_seed_tables: Mapped[list[WordSeedTable]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
     )
 
 
@@ -586,3 +597,38 @@ class Vote(TimestampMixin, Base):
     voter: Mapped[User | None] = relationship()
 
     __table_args__ = (UniqueConstraint("proposal_id", "voter_id", name="uq_vote"),)
+
+
+class WordSeedTable(TimestampMixin, Base):
+    """A themed set of word seeds available for oracle invocations in a game."""
+
+    __tablename__ = "word_seed_tables"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    game: Mapped[Game] = relationship(back_populates="word_seed_tables")
+    entries: Mapped[list[WordSeedEntry]] = relationship(
+        back_populates="table",
+        cascade="all, delete-orphan",
+    )
+
+
+class WordSeedEntry(TimestampMixin, Base):
+    """A single word within a WordSeedTable."""
+
+    __tablename__ = "word_seed_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    table_id: Mapped[int] = mapped_column(
+        ForeignKey("word_seed_tables.id", ondelete="CASCADE"), nullable=False
+    )
+    word: Mapped[str] = mapped_column(String(100), nullable=False)
+    word_type: Mapped[WordSeedWordType] = mapped_column(
+        Enum(WordSeedWordType, native_enum=False), nullable=False
+    )
+
+    table: Mapped[WordSeedTable] = relationship(back_populates="entries")

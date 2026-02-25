@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Oracle — Scene {{ scene.order }} — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }} &mdash; Oracle</h1>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="/games/{{ game.id }}">Dashboard</a> |
+    <a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}">Scene {{ scene.order }}</a>
+</nav>
+
+<section style="margin-top:1.5rem; padding:1rem; border:1px solid #ccc; border-radius:4px; background:#fafafa;">
+  <h2 style="margin-top:0;">Invoke the Oracle</h2>
+  <p style="color:#555; margin:0 0 0.5rem;">
+    Ask a question and the oracle will draw on fate's threads to offer interpretation.
+  </p>
+
+  <div style="margin:1rem 0; padding:0.75rem 1rem; background:#fff8e6; border:1px solid #e8c84a; border-radius:4px; display:inline-block;">
+    <div style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.3rem;">Word Seeds</div>
+    <span style="font-size:1.3rem; font-weight:bold; color:#333;">{{ action }}</span>
+    <span style="font-size:1rem; color:#999; margin:0 0.4rem;">/</span>
+    <span style="font-size:1.3rem; font-weight:bold; color:#333;">{{ descriptor }}</span>
+  </div>
+
+  <div style="margin:0.5rem 0 1rem;">
+    <a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/oracle"
+       style="font-size:0.85rem; color:#4a7fc1;">&#8635; Re-roll word pair</a>
+  </div>
+
+  <form method="post" action="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/oracle">
+    <input type="hidden" name="word_action" value="{{ action }}">
+    <input type="hidden" name="word_descriptor" value="{{ descriptor }}">
+
+    <div style="margin-bottom:0.75rem;">
+      <label style="display:block; font-weight:bold; margin-bottom:0.3rem;" for="question">
+        Your question
+      </label>
+      <textarea id="question" name="question" rows="3" required
+        style="width:100%; max-width:36rem;"
+        placeholder="What does fate say about\u2026"></textarea>
+    </div>
+
+    <div style="margin:0.75rem 0; padding:0.6rem 0.75rem; background:#f7f7f0; border:1px solid #ddd; border-radius:4px; max-width:36rem;">
+      <div style="font-size:0.85rem; color:#555; margin-bottom:0.4rem;"><strong>Beat significance</strong></div>
+      <label style="margin-right:1rem;">
+        <input type="radio" name="beat_significance" value="minor" checked> Minor
+        <span style="font-size:0.8rem; color:#888;">(canon immediately)</span>
+      </label>
+      <label>
+        <input type="radio" name="beat_significance" value="major"> Major
+        <span style="font-size:0.8rem; color:#888;">(requires group vote)</span>
+      </label>
+    </div>
+
+    <button type="submit" style="margin-top:0.25rem;">Invoke Oracle</button>
+  </form>
+</section>
+
+<p style="margin-top:1.5rem;">
+  <a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}">&larr; Back to Scene</a>
+</p>
+{% endblock %}

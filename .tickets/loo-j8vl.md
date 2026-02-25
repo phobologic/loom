@@ -1,6 +1,6 @@
 ---
 id: loo-j8vl
-status: open
+status: closed
 deps: [loo-i3rj]
 links: []
 created: 2026-02-25T01:22:43Z
