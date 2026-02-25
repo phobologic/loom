@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}{{ game.name }} — World Document — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }} — World Document</h1>
+
+{% if world_document %}
+<section>
+  <h2>World Document</h2>
+  <div style="background:#f9f9f9; border:1px solid #ddd; padding:1rem; white-space:pre-wrap;">{{ world_document.content }}</div>
+</section>
+
+{% if proposal %}
+<section style="margin-top:1.5rem;">
+  <h2>Approval Vote</h2>
+  <p>
+    <strong>Proposed by:</strong> {{ proposal.proposed_by.display_name if proposal.proposed_by else "Unknown" }}
+    &mdash; <strong>Type:</strong> {{ proposal.proposal_type.value | replace("_", " ") | title }}
+    &mdash; <strong>Status:</strong> {{ proposal.status.value | capitalize }}
+  </p>
+
+  {% if proposal.status.value == "approved" %}
+  <p style="color:green;"><strong>Approved! The game is now active.</strong>
+    <a href="/games/{{ game.id }}">Go to game dashboard &rarr;</a>
+  </p>
+  {% endif %}
+
+  <p>
+    <strong>Votes:</strong> {{ yes_count }} yes &middot; {{ no_count }} no &middot; {{ suggest_count }} suggestion(s)
+    &nbsp;({{ total_players }} player{{ "s" if total_players != 1 else "" }} total,
+    threshold: more than {{ threshold | int if threshold == (threshold | int) else threshold }})
+  </p>
+
+  {% if proposal.votes %}
+  <ul>
+    {% for v in proposal.votes %}
+    <li>
+      <strong>{{ v.voter.display_name if v.voter else "Anonymous" }}:</strong>
+      {{ v.choice.value | replace("_", " ") | capitalize }}
+      {% if v.suggestion %}
+      <br><em style="color:#555;">Suggestion: {{ v.suggestion }}</em>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if proposal.status.value == "open" %}
+    {% if my_vote %}
+    <p>Your vote: <strong>{{ my_vote.choice.value | replace("_", " ") | capitalize }}</strong>
+    {% if my_vote.suggestion %} &mdash; <em>{{ my_vote.suggestion }}</em>{% endif %}</p>
+    {% else %}
+    <form method="post" action="/games/{{ game.id }}/proposals/{{ proposal.id }}/vote" style="margin-top:1rem;">
+      <fieldset>
+        <legend><strong>Cast your vote</strong></legend>
+        <label style="display:block; margin:0.4rem 0;">
+          <input type="radio" name="choice" value="yes" required> Yes, approve
+        </label>
+        <label style="display:block; margin:0.4rem 0;">
+          <input type="radio" name="choice" value="no"> No, reject
+        </label>
+        <label style="display:block; margin:0.4rem 0;">
+          <input type="radio" name="choice" value="suggest_modification"> Suggest modification
+        </label>
+        <div style="margin-top:0.5rem;">
+          <label for="suggestion">Suggestion (optional):</label><br>
+          <textarea id="suggestion" name="suggestion" rows="3" style="width:100%; box-sizing:border-box;"></textarea>
+        </div>
+        <button type="submit" style="margin-top:0.5rem;">Submit vote</button>
+      </fieldset>
+    </form>
+    {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% else %}
+<p>No world document has been generated yet.</p>
+
+{% if game.status.value == "setup" and current_member.role.value == "organizer" %}
+<p>Complete all Session 0 prompts and click <strong>Generate World Document</strong> to proceed.</p>
+<a href="/games/{{ game.id }}/session0">Go to Session 0 &rarr;</a>
+{% endif %}
+{% endif %}
+
+<!-- Early exit: Propose Ready to Play (any member, during setup) -->
+{% if game.status.value == "setup" and not has_open_proposal %}
+<section style="margin-top:2rem; border-top:1px dashed #ccc; padding-top:1rem;">
+  <h3>Early Exit</h3>
+  <p>If the group is ready to start, you can propose to begin play from whatever has been established so far.</p>
+  <form method="post" action="/games/{{ game.id }}/session0/propose-ready">
+    <button type="submit">Propose Ready to Play</button>
+  </form>
+</section>
+{% endif %}
+
+<p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}">&larr; Game Dashboard</a></p>
+{% endblock %}

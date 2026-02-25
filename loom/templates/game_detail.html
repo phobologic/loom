@@ -12,7 +12,7 @@
     <a href="/games/{{ game.id }}/settings">Settings</a> |
     {% if game.status.value == "setup" %}<a href="/games/{{ game.id }}/session0">Session 0</a> | {% endif %}
     <a href="/games/{{ game.id }}/safety-tools">Safety Tools</a> |
-    <a href="#" aria-disabled="true">World Doc</a>
+    <a href="/games/{{ game.id }}/world-document">World Doc</a>
 </nav>
 
 {% if game.status.value == "setup" %}
@@ -54,6 +54,27 @@
     <button type="submit">Generate new invite link</button>
 </form>
 {% endif %}
+{% endif %}
+
+{% if current_member.role.value == "organizer" %}
+<section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2>Game Management</h2>
+  {% if game.status.value == "active" %}
+  <form method="post" action="/games/{{ game.id }}/pause" style="display:inline;">
+    <button type="submit">Pause Game</button>
+  </form>
+  {% endif %}
+  {% if game.status.value == "paused" %}
+  <form method="post" action="/games/{{ game.id }}/resume" style="display:inline;">
+    <button type="submit">Resume Game</button>
+  </form>
+  {% endif %}
+  {% if game.status.value != "archived" %}
+  <form method="post" action="/games/{{ game.id }}/archive" style="display:inline; margin-left:0.5rem;">
+    <button type="submit" onclick="return confirm('Archive this game? It will become read-only.')">Archive Game</button>
+  </form>
+  {% endif %}
+</section>
 {% endif %}
 
 <p style="margin-top:1rem;"><a href="/games">&larr; My Games</a></p>

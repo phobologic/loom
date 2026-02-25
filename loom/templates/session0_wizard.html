@@ -208,16 +208,25 @@
 
     {% endif %}
 
-    <!-- Complete Session 0 button -->
+    <!-- Complete Session 0 / Generate World Document (organizer, all prompts done) -->
     {% if current_member.role.value == "organizer" and all_done %}
     <section style="margin-top:2rem; border-top:2px solid #333; padding-top:1rem;">
       <h3>Session 0 complete!</h3>
-      <p>All prompts are done. Ready to start the game?</p>
+      <p>All prompts are done. Generate the world document and open an approval vote to start the game.</p>
       <form method="post" action="/games/{{ game.id }}/session0/complete">
-        <button type="submit">Complete Session 0 and start game</button>
+        <button type="submit">Generate World Document &amp; Start Vote</button>
       </form>
     </section>
     {% endif %}
+
+    <!-- Early exit: any member can propose ready to play -->
+    <section style="margin-top:2rem; border-top:1px dashed #ccc; padding-top:1rem;">
+      <h3>Early Exit</h3>
+      <p>If the group is ready to start, any player can propose to skip remaining prompts and begin play.</p>
+      <form method="post" action="/games/{{ game.id }}/session0/propose-ready">
+        <button type="submit">Propose Ready to Play</button>
+      </form>
+    </section>
 
   </main>
 </div>

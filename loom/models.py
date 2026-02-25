@@ -120,6 +120,30 @@ class SafetyToolKind(str, enum.Enum):
     veil = "veil"
 
 
+class ProposalType(str, enum.Enum):
+    """What is being voted on."""
+
+    world_doc_approval = "world_doc_approval"
+    ready_to_play = "ready_to_play"
+
+
+class ProposalStatus(str, enum.Enum):
+    """Lifecycle status of a vote proposal."""
+
+    open = "open"
+    approved = "approved"
+    rejected = "rejected"
+    withdrawn = "withdrawn"
+
+
+class VoteChoice(str, enum.Enum):
+    """A player's vote on a proposal."""
+
+    yes = "yes"
+    no = "no"
+    suggest_modification = "suggest_modification"
+
+
 # ---------------------------------------------------------------------------
 # Timestamp mixin
 # ---------------------------------------------------------------------------
@@ -238,6 +262,16 @@ class Game(TimestampMixin, Base):
         back_populates="game",
         cascade="all, delete-orphan",
         order_by="GameSafetyTool.created_at",
+    )
+    world_document: Mapped[WorldDocument | None] = relationship(
+        back_populates="game",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    proposals: Mapped[list[VoteProposal]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
+        order_by="VoteProposal.created_at",
     )
 
 
@@ -474,3 +508,64 @@ class GameSafetyTool(TimestampMixin, Base):
 
     game: Mapped[Game] = relationship(back_populates="safety_tools")
     user: Mapped[User | None] = relationship()
+
+
+class WorldDocument(TimestampMixin, Base):
+    """The generated world document capturing agreed-upon setting for a game."""
+
+    __tablename__ = "world_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(
+        ForeignKey("games.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    game: Mapped[Game] = relationship(back_populates="world_document")
+
+
+class VoteProposal(TimestampMixin, Base):
+    """A proposal subject to group approval via votes."""
+
+    __tablename__ = "vote_proposals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    proposal_type: Mapped[ProposalType] = mapped_column(
+        Enum(ProposalType, native_enum=False), nullable=False
+    )
+    proposed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[ProposalStatus] = mapped_column(
+        Enum(ProposalStatus, native_enum=False), nullable=False, default=ProposalStatus.open
+    )
+
+    game: Mapped[Game] = relationship(back_populates="proposals")
+    proposed_by: Mapped[User | None] = relationship(foreign_keys=[proposed_by_id])
+    votes: Mapped[list[Vote]] = relationship(
+        back_populates="proposal",
+        cascade="all, delete-orphan",
+        order_by="Vote.created_at",
+    )
+
+
+class Vote(TimestampMixin, Base):
+    """An individual player's vote on a VoteProposal."""
+
+    __tablename__ = "votes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    proposal_id: Mapped[int] = mapped_column(
+        ForeignKey("vote_proposals.id", ondelete="CASCADE"), nullable=False
+    )
+    voter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    choice: Mapped[VoteChoice] = mapped_column(Enum(VoteChoice, native_enum=False), nullable=False)
+    suggestion: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    proposal: Mapped[VoteProposal] = relationship(back_populates="votes")
+    voter: Mapped[User | None] = relationship()
+
+    __table_args__ = (UniqueConstraint("proposal_id", "voter_id", name="uq_vote"),)

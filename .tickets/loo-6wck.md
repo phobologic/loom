@@ -1,6 +1,6 @@
 ---
 id: loo-6wck
-status: open
+status: closed
 deps: [loo-qlzi]
 links: []
 created: 2026-02-25T01:22:42Z

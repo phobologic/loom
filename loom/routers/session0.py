@@ -19,11 +19,16 @@ from loom.models import (
     GameStatus,
     MemberRole,
     PromptStatus,
+    ProposalType,
     Session0Prompt,
     Session0Response,
     User,
+    Vote,
+    VoteProposal,
+    WorldDocument,
 )
 from loom.rendering import templates
+from loom.routers.world_document import _load_game_for_voting, create_world_doc_and_proposal
 
 router = APIRouter()
 
@@ -492,8 +497,12 @@ async def complete_session0(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
-    """Complete Session 0 and transition the game to active (organizer only)."""
-    game = await _load_game_with_session0(game_id, db)
+    """Generate world document and open a group approval vote (organizer only).
+
+    When only one player is present the proposer's implicit yes auto-approves
+    and the game transitions directly to active.
+    """
+    game = await _load_game_for_voting(game_id, db)
     if game is None:
         raise HTTPException(status_code=404, detail="Game not found")
 
@@ -501,10 +510,64 @@ async def complete_session0(
     if current_member is None or current_member.role != MemberRole.organizer:
         raise HTTPException(status_code=403, detail="Only the organizer can complete Session 0")
 
-    prompts = list(game.session0_prompts)
-    if not _all_done(prompts):
+    if not _all_done(list(game.session0_prompts)):
         raise HTTPException(status_code=403, detail="All prompts must be complete or skipped first")
 
-    game.status = GameStatus.active
+    _world_doc, _proposal, auto_approved = await create_world_doc_and_proposal(
+        game=game,
+        proposer_id=current_user.id,
+        proposal_type=ProposalType.world_doc_approval,
+        db=db,
+    )
     await db.commit()
-    return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+
+    if auto_approved:
+        return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+    return RedirectResponse(url=f"/games/{game_id}/world-document", status_code=303)
+
+
+@router.post("/games/{game_id}/session0/propose-ready", response_class=RedirectResponse)
+async def propose_ready_to_play(
+    game_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Propose an early exit from Session 0 (any member).
+
+    Requires at minimum that the game has a name and at least one piece of
+    setting content (pitch or a session0 response).  Generates a world
+    document from whatever has been established and opens a vote.
+    """
+    game = await _load_game_for_voting(game_id, db)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if game.status != GameStatus.setup:
+        raise HTTPException(status_code=403, detail="Game is not in setup phase")
+
+    # Minimum requirement: a name and at least one sentence of content
+    has_content = bool(game.pitch) or any(
+        r for p in game.session0_prompts if not p.is_safety_tools for r in p.responses
+    )
+    if not has_content:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot propose ready to play: no setting content exists yet",
+        )
+
+    _world_doc, _proposal, auto_approved = await create_world_doc_and_proposal(
+        game=game,
+        proposer_id=current_user.id,
+        proposal_type=ProposalType.ready_to_play,
+        db=db,
+    )
+    await db.commit()
+
+    if auto_approved:
+        return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+    return RedirectResponse(url=f"/games/{game_id}/world-document", status_code=303)

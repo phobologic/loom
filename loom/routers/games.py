@@ -301,6 +301,87 @@ async def regenerate_invite(
     return RedirectResponse(url=f"/games/{game_id}", status_code=303)
 
 
+@router.post("/games/{game_id}/pause", response_class=RedirectResponse)
+async def pause_game(
+    game_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Pause an active game (organizer only)."""
+    result = await db.execute(
+        select(Game).where(Game.id == game_id).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can pause a game")
+
+    if game.status != GameStatus.active:
+        raise HTTPException(status_code=403, detail="Only active games can be paused")
+
+    game.status = GameStatus.paused
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+
+
+@router.post("/games/{game_id}/resume", response_class=RedirectResponse)
+async def resume_game(
+    game_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Resume a paused game (organizer only)."""
+    result = await db.execute(
+        select(Game).where(Game.id == game_id).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can resume a game")
+
+    if game.status != GameStatus.paused:
+        raise HTTPException(status_code=403, detail="Only paused games can be resumed")
+
+    game.status = GameStatus.active
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+
+
+@router.post("/games/{game_id}/archive", response_class=RedirectResponse)
+async def archive_game(
+    game_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Archive a game (organizer only). Archived games are read-only."""
+    result = await db.execute(
+        select(Game).where(Game.id == game_id).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can archive a game")
+
+    if game.status == GameStatus.archived:
+        raise HTTPException(status_code=403, detail="Game is already archived")
+
+    game.status = GameStatus.archived
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+
+
 @router.post("/games/{game_id}/invite/revoke", response_class=RedirectResponse)
 async def revoke_invite(
     game_id: int,
