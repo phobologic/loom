@@ -13,7 +13,10 @@ from loom.main import _DEV_USERS, app
 from loom.models import (
     Act,
     ActStatus,
+    Beat,
+    BeatStatus,
     Character,
+    Event,
     Game,
     GameMember,
     GameStatus,
@@ -800,3 +803,170 @@ class TestBeatsPartial:
                 follow_redirects=False,
             )
             assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Beat submission
+# ---------------------------------------------------------------------------
+
+
+async def _get_beats(scene_id: int) -> list[Beat]:
+    async with _test_session_factory() as db:
+        result = await db.execute(
+            select(Beat)
+            .where(Beat.scene_id == scene_id)
+            .options(selectinload(Beat.events))
+            .order_by(Beat.order)
+        )
+        return list(result.scalars().all())
+
+
+class TestSubmitBeat:
+    async def test_creates_beat_with_narrative_event(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "The hero steps forward."},
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert len(beats) == 1
+        assert len(beats[0].events) == 1
+        assert beats[0].events[0].content == "The hero steps forward."
+
+    async def test_beat_is_immediately_canon(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "Action."},
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert beats[0].status == BeatStatus.canon
+
+    async def test_event_type_is_narrative(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "Action."},
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        from loom.models import EventType
+
+        assert beats[0].events[0].type == EventType.narrative
+
+    async def test_beat_order_increments(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "First."},
+            follow_redirects=False,
+        )
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "Second."},
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert beats[0].order == 1
+        assert beats[1].order == 2
+
+    async def test_redirects_to_scene_detail(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "Action."},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == (f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}")
+
+    async def test_requires_membership(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        await _login(client, 2)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "Sneaky."},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    async def test_rejects_empty_content(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "   "},
+            follow_redirects=False,
+        )
+        assert response.status_code == 422
+
+    async def test_rejects_beat_on_inactive_scene(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        async with _test_session_factory() as db:
+            scene = Scene(
+                act_id=act_id,
+                guiding_question="Done?",
+                tension=5,
+                status=SceneStatus.complete,
+                order=1,
+            )
+            db.add(scene)
+            await db.commit()
+            scene_id = scene.id
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "Too late."},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    async def test_beat_appears_in_timeline(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"content": "A dramatic entrance."},
+            follow_redirects=False,
+        )
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            follow_redirects=False,
+        )
+        assert b"A dramatic entrance." in response.content
+
+    async def test_form_shown_for_active_scene(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}",
+            follow_redirects=False,
+        )
+        assert b"Submit Beat" in response.content

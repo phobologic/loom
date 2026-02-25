@@ -60,7 +60,24 @@
 
 <section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
   <h2>Submit a Beat</h2>
-  <p style="color:#888; font-style:italic;">Beat submission is coming in the next step.</p>
+  {% if scene.status.value == "active" %}
+  <form method="post" action="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/beats">
+    <div style="margin-bottom:0.75rem;">
+      <label for="beat-content"><strong>Narrative</strong></label><br>
+      <textarea
+        id="beat-content"
+        name="content"
+        rows="4"
+        style="width:100%; max-width:36rem; margin-top:0.25rem;"
+        placeholder="Describe what happens…"
+        required
+      ></textarea>
+    </div>
+    <button type="submit">Submit Beat</button>
+  </form>
+  {% else %}
+  <p style="color:#888; font-style:italic;">Beat submission is only available for active scenes.</p>
+  {% endif %}
 </section>
 
 <p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes">&larr; Back to Scenes</a></p>

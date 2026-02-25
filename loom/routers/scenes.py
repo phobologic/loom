@@ -15,7 +15,11 @@ from loom.models import (
     Act,
     ActStatus,
     Beat,
+    BeatSignificance,
+    BeatStatus,
     Character,
+    Event,
+    EventType,
     Game,
     GameMember,
     GameStatus,
@@ -286,6 +290,63 @@ async def scene_detail(
             "beats": filtered_beats,
             "filter": filter,
         },
+    )
+
+
+@router.post(
+    "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+    response_class=RedirectResponse,
+)
+async def submit_beat(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    content: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Submit a minor narrative beat. Instantly becomes canon."""
+    scene = await _load_scene_for_view(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if scene.status != SceneStatus.active:
+        raise HTTPException(
+            status_code=403, detail="Beats can only be submitted for an active scene"
+        )
+
+    if not content.strip():
+        raise HTTPException(status_code=422, detail="Beat content cannot be empty")
+
+    next_order = max((b.order for b in scene.beats), default=0) + 1
+
+    beat = Beat(
+        scene_id=scene.id,
+        author_id=current_user.id,
+        significance=BeatSignificance.minor,
+        status=BeatStatus.canon,
+        order=next_order,
+    )
+    db.add(beat)
+    await db.flush()
+
+    event = Event(
+        beat_id=beat.id,
+        type=EventType.narrative,
+        content=content.strip(),
+        order=1,
+    )
+    db.add(event)
+    await db.commit()
+
+    return RedirectResponse(
+        url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}",
+        status_code=303,
     )
 
 
