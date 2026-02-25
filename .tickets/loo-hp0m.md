@@ -1,6 +1,6 @@
 ---
 id: loo-hp0m
-status: open
+status: closed
 deps: [loo-4nd5]
 links: []
 created: 2026-02-25T01:22:42Z

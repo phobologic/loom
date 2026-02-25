@@ -621,3 +621,182 @@ class TestProposeSceneGuards:
             follow_redirects=False,
         )
         assert response.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Scene detail view
+# ---------------------------------------------------------------------------
+
+
+async def _create_active_scene(act_id: int, game_id: int) -> int:
+    """Insert an active scene with a character and return its id."""
+    async with _test_session_factory() as db:
+        char = Character(game_id=game_id, owner_id=1, name="Test Hero")
+        db.add(char)
+        await db.flush()
+        scene = Scene(
+            act_id=act_id,
+            guiding_question="What is at stake?",
+            tension=6,
+            status=SceneStatus.active,
+            order=1,
+        )
+        db.add(scene)
+        await db.flush()
+        await db.refresh(scene, ["characters_present"])
+        scene.characters_present = [char]
+        await db.commit()
+        return scene.id
+
+
+class TestSceneDetailView:
+    async def test_accessible_to_member(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert response.status_code == 200
+
+    async def test_requires_membership(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        await _login(client, 2)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert response.status_code == 403
+
+    async def test_404_for_unknown_scene(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/9999", follow_redirects=False
+        )
+        assert response.status_code == 404
+
+    async def test_shows_scene_info(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert b"What is at stake?" in response.content
+        assert b"Tension" in response.content
+
+    async def test_shows_empty_beat_timeline(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert b"No beats yet" in response.content
+
+    async def test_shows_filter_controls(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert b"IC Only" in response.content
+        assert b"OOC Only" in response.content
+
+    async def test_htmx_polling_attr_present(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert b"hx-trigger" in response.content
+        assert b"every 5s" in response.content
+
+    async def test_filter_query_param_accepted(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        for f in ("all", "ic", "ooc"):
+            response = await client.get(
+                f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}?filter={f}",
+                follow_redirects=False,
+            )
+            assert response.status_code == 200
+
+    async def test_default_tension_uses_last_scene_tension(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        char_id = await _create_character(game_id, 1)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes",
+            data={
+                "guiding_question": "First scene?",
+                "tension": "7",
+                "character_ids": str(char_id),
+            },
+            follow_redirects=False,
+        )
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes", follow_redirects=False
+        )
+        # The propose form should pre-fill with the last scene's tension (7)
+        assert b'value="7"' in response.content
+
+
+# ---------------------------------------------------------------------------
+# Beats partial
+# ---------------------------------------------------------------------------
+
+
+class TestBeatsPartial:
+    async def test_returns_200_for_member(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats", follow_redirects=False
+        )
+        assert response.status_code == 200
+
+    async def test_requires_membership(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        await _login(client, 2)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats", follow_redirects=False
+        )
+        assert response.status_code == 403
+
+    async def test_404_for_unknown_scene(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/9999/beats", follow_redirects=False
+        )
+        assert response.status_code == 404
+
+    async def test_shows_empty_message(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats", follow_redirects=False
+        )
+        assert b"No beats yet" in response.content
+
+    async def test_filter_param_accepted(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        for f in ("all", "ic", "ooc"):
+            response = await client.get(
+                f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats?filter={f}",
+                follow_redirects=False,
+            )
+            assert response.status_code == 200

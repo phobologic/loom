@@ -1,0 +1,57 @@
+{% if beats %}
+<ol style="list-style:none; padding:0; margin:0;">
+  {% for beat in beats %}
+  <li style="margin-bottom:1.25rem; padding:0.75rem; border:1px solid {% if beat.status.value in ['proposed', 'challenged'] %}#e8a020{% else %}#ddd{% endif %}; border-radius:4px; background:{% if beat.status.value == 'challenged' %}#fff8ee{% elif beat.status.value == 'proposed' %}#fffbf0{% else %}#fff{% endif %};">
+    <div style="font-size:0.85rem; color:#555; margin-bottom:0.4rem;">
+      <strong>{{ beat.author.display_name if beat.author else "Unknown" }}</strong>
+      &middot; {{ beat.significance.value | capitalize }}
+      &middot; <em>{{ beat.status.value | capitalize }}</em>
+      {% if beat.status.value == "proposed" %}
+      <span style="color:#c07800; font-weight:bold;">[Pending vote]</span>
+      {% elif beat.status.value == "challenged" %}
+      <span style="color:#c04000; font-weight:bold;">[Challenged]</span>
+      {% endif %}
+    </div>
+    {% for event in beat.events %}
+    <div style="margin-top:0.4rem; padding:0.3rem 0.5rem; border-left:3px solid {% if event.type.value == 'ooc' %}#999{% else %}#4a7fc1{% endif %}; background:{% if event.type.value == 'ooc' %}#f5f5f5{% else %}#f8fbff{% endif %};">
+      <span style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:0.05em;">{{ event.type.value | replace("_", " ") }}</span>
+      {% if event.type.value == "narrative" %}
+      <p style="margin:0.2rem 0 0;">{{ event.content }}</p>
+      {% elif event.type.value == "roll" %}
+      <p style="margin:0.2rem 0 0;">
+        Roll <code>{{ event.roll_notation }}</code>: <strong>{{ event.roll_result }}</strong>
+        {% if event.content %}&mdash; {{ event.content }}{% endif %}
+      </p>
+      {% elif event.type.value == "oracle" %}
+      <p style="margin:0.2rem 0 0;"><em>{{ event.oracle_query }}</em></p>
+      {% if event.interpretations %}
+      <ul style="margin:0.25rem 0 0; padding-left:1.2rem;">
+        {% for interp in event.interpretations %}
+        <li>{{ interp }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% elif event.type.value == "fortune_roll" %}
+      <p style="margin:0.2rem 0 0;">
+        Odds: {{ event.fortune_roll_odds }} &rarr; <strong>{{ event.fortune_roll_result }}</strong>
+        {% if event.fortune_roll_tension %}&mdash; Tension: {{ event.fortune_roll_tension }}{% endif %}
+      </p>
+      {% elif event.type.value == "ooc" %}
+      <p style="margin:0.2rem 0 0; color:#555;">{{ event.content }}</p>
+      {% endif %}
+      {% if event.word_seed_action or event.word_seed_descriptor %}
+      <p style="margin:0.15rem 0 0; font-size:0.8rem; color:#777;">
+        Seeds: {{ event.word_seed_action }}{% if event.word_seed_action and event.word_seed_descriptor %} / {% endif %}{{ event.word_seed_descriptor }}
+      </p>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% if not beat.events %}
+    <p style="margin:0.25rem 0 0; color:#aaa; font-style:italic; font-size:0.85rem;">(no events)</p>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p style="color:#888; font-style:italic;">No beats yet. Submit the first beat to begin the scene.</p>
+{% endif %}

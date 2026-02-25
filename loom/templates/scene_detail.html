@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Scene {{ scene.order }} — {{ act.title if act.title else "Act " ~ act.order }} — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }} &mdash; {{ act.title if act.title else "Act " ~ act.order }} &mdash; Scene {{ scene.order }}</h1>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="/games/{{ game.id }}">Dashboard</a> |
+    <a href="/games/{{ game.id }}/acts">Acts</a> |
+    <a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes">Scenes</a> |
+    <a href="/games/{{ game.id }}/characters">Characters</a> |
+    <a href="/games/{{ game.id }}/safety-tools">Safety Tools</a> |
+    <a href="/games/{{ game.id }}/world-document">World Doc</a>
+</nav>
+
+<section style="margin-top:1.5rem; padding:1rem; border:1px solid #ccc; border-radius:4px; background:#fafafa;">
+  <h2 style="margin-top:0;">Scene {{ scene.order }}: {{ scene.guiding_question }}</h2>
+  {% if scene.location %}
+  <p><strong>Location:</strong> {{ scene.location }}</p>
+  {% endif %}
+  <p>
+    <strong>Tension:</strong>
+    <span style="font-size:1.2rem; font-weight:bold; color:{% if scene.tension >= 7 %}#c04000{% elif scene.tension >= 4 %}#c07800{% else %}#2a7a2a{% endif %};">
+      {{ scene.tension }}
+    </span>
+    / 9
+    &nbsp;&mdash;&nbsp;
+    <strong>Status:</strong> {{ scene.status.value | capitalize }}
+  </p>
+  {% if scene.characters_present %}
+  <p>
+    <strong>Characters present:</strong>
+    {% for char in scene.characters_present %}{{ char.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+</section>
+
+<section style="margin-top:1.5rem;">
+  <h2>Beat Timeline</h2>
+
+  <nav style="margin-bottom:0.75rem;">
+    <strong>Filter:</strong>
+    <a href="?filter=all"{% if filter == "all" %} style="font-weight:bold;" aria-current="page"{% endif %}>All</a> |
+    <a href="?filter=ic"{% if filter == "ic" %} style="font-weight:bold;" aria-current="page"{% endif %}>IC Only</a> |
+    <a href="?filter=ooc"{% if filter == "ooc" %} style="font-weight:bold;" aria-current="page"{% endif %}>OOC Only</a>
+  </nav>
+
+  <div
+    id="beat-timeline"
+    hx-get="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/beats?filter={{ filter }}"
+    hx-trigger="every 5s"
+    hx-target="#beat-timeline"
+    hx-swap="innerHTML"
+  >
+    {% include "_beats_partial.html" %}
+  </div>
+</section>
+
+<section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2>Submit a Beat</h2>
+  <p style="color:#888; font-style:italic;">Beat submission is coming in the next step.</p>
+</section>
+
+<p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes">&larr; Back to Scenes</a></p>
+{% endblock %}

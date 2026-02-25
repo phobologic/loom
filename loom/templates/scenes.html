@@ -21,9 +21,15 @@
   <ol>
     {% for scene in scenes %}
     <li style="margin-bottom:0.75rem;">
-      <strong>Scene {{ loop.index }}</strong>
+      <strong>
+        {% if scene.status.value == "active" %}
+        <a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}">Scene {{ loop.index }}</a>
+        {% else %}
+        Scene {{ loop.index }}
+        {% endif %}
+      </strong>
       <em>({{ scene.status.value | capitalize }})</em>
-      {% if scene.status.value == "active" %} &mdash; Tension: {{ scene.tension }}{% endif %}
+      &mdash; Tension: {{ scene.tension }}
       <br>{{ scene.guiding_question }}
       {% if scene.location %}<br><em>Location: {{ scene.location }}</em>{% endif %}
       {% if scene.characters_present %}
@@ -120,7 +126,7 @@
     </div>
     <div style="margin-top:0.5rem;">
       <label for="tension">Tension (1–9, default 5):</label><br>
-      <input type="number" id="tension" name="tension" min="1" max="9" value="5" style="width:4rem;">
+      <input type="number" id="tension" name="tension" min="1" max="9" value="{{ default_tension }}" style="width:4rem;">
     </div>
     <div style="margin-top:0.5rem;">
       <label><strong>Characters Present</strong> (select at least one):</label><br>

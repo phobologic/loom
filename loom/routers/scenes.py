@@ -14,6 +14,7 @@ from loom.dependencies import get_current_user
 from loom.models import (
     Act,
     ActStatus,
+    Beat,
     Character,
     Game,
     GameMember,
@@ -30,6 +31,9 @@ from loom.models import (
 from loom.rendering import templates
 from loom.voting import activate_scene, approval_threshold, is_approved
 
+_IC_EVENT_TYPES = {"narrative", "roll", "oracle", "fortune_roll"}
+_OOC_EVENT_TYPES = {"ooc"}
+
 router = APIRouter()
 
 
@@ -38,6 +42,30 @@ def _find_membership(game: Game, user_id: int) -> GameMember | None:
         if m.user_id == user_id:
             return m
     return None
+
+
+async def _load_scene_for_view(scene_id: int, db: AsyncSession) -> Scene | None:
+    """Load a scene with beats, events, characters, and parent act/game for access checks."""
+    result = await db.execute(
+        select(Scene)
+        .where(Scene.id == scene_id)
+        .options(
+            selectinload(Scene.act).selectinload(Act.game).selectinload(Game.members),
+            selectinload(Scene.characters_present),
+            selectinload(Scene.beats).selectinload(Beat.author),
+            selectinload(Scene.beats).selectinload(Beat.events),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+def _apply_beat_filter(beats: list[Beat], filter_val: str) -> list[Beat]:
+    """Return beats matching the event-type filter (all / ic / ooc)."""
+    if filter_val == "ic":
+        return [b for b in beats if any(e.type.value in _IC_EVENT_TYPES for e in b.events)]
+    if filter_val == "ooc":
+        return [b for b in beats if any(e.type.value in _OOC_EVENT_TYPES for e in b.events)]
+    return beats
 
 
 async def _load_game_for_scenes(game_id: int, db: AsyncSession) -> Game | None:
@@ -106,6 +134,9 @@ async def scenes_view(
     total_players = len(game.members)
     threshold = approval_threshold(total_players)
 
+    non_proposed = [s for s in act.scenes if s.status != SceneStatus.proposed]
+    default_tension = max(non_proposed, key=lambda s: s.order).tension if non_proposed else 5
+
     return templates.TemplateResponse(
         request,
         "scenes.html",
@@ -123,6 +154,7 @@ async def scenes_view(
             "suggest_count": suggest_count,
             "total_players": total_players,
             "threshold": threshold,
+            "default_tension": default_tension,
         },
     )
 
@@ -214,3 +246,79 @@ async def propose_scene(
 
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}/acts/{act_id}/scenes", status_code=303)
+
+
+@router.get("/games/{game_id}/acts/{act_id}/scenes/{scene_id}", response_class=HTMLResponse)
+async def scene_detail(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    request: Request,
+    filter: str = "all",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Show the scene play view: scene info, beat timeline with HTMX polling, and filter controls."""
+    scene = await _load_scene_for_view(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    act = scene.act
+    game = act.game
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if filter not in ("all", "ic", "ooc"):
+        filter = "all"
+
+    beats = sorted(scene.beats, key=lambda b: b.order)
+    filtered_beats = _apply_beat_filter(beats, filter)
+
+    return templates.TemplateResponse(
+        request,
+        "scene_detail.html",
+        {
+            "game": game,
+            "act": act,
+            "scene": scene,
+            "beats": filtered_beats,
+            "filter": filter,
+        },
+    )
+
+
+@router.get("/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats", response_class=HTMLResponse)
+async def beats_partial(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    request: Request,
+    filter: str = "all",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """HTMX partial: return the beat timeline fragment for polling updates."""
+    scene = await _load_scene_for_view(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if filter not in ("all", "ic", "ooc"):
+        filter = "all"
+
+    beats = sorted(scene.beats, key=lambda b: b.order)
+    filtered_beats = _apply_beat_filter(beats, filter)
+
+    return templates.TemplateResponse(
+        request,
+        "_beats_partial.html",
+        {
+            "beats": filtered_beats,
+        },
+    )
