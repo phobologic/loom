@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Dev Login — Loom{% endblock %}
+
+{% block content %}
+<h1>Dev Login</h1>
+<p>Select a user to log in as:</p>
+{% for user in users %}
+<form method="post" action="/dev/login" style="display:inline-block; margin:0.25rem;">
+    <input type="hidden" name="user_id" value="{{ user.id }}">
+    <button type="submit">{{ user.display_name }}</button>
+</form>
+{% else %}
+<p>No users found. Check that the app started correctly.</p>
+{% endfor %}
+{% endblock %}

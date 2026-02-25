@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./loom.db"
     environment: str = "local"
     debug: bool = True
+    session_secret_key: str = "dev-secret-change-me"
 
 
 settings = Settings()
