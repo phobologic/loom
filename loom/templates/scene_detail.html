@@ -62,19 +62,74 @@
   <h2>Submit a Beat</h2>
   {% if scene.status.value == "active" %}
   <form method="post" action="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/beats">
-    <div style="margin-bottom:0.75rem;">
-      <label for="beat-content"><strong>Narrative</strong></label><br>
-      <textarea
-        id="beat-content"
-        name="content"
-        rows="4"
-        style="width:100%; max-width:36rem; margin-top:0.25rem;"
-        placeholder="Describe what happens…"
-        required
-      ></textarea>
+    <div id="events-container"></div>
+    <div style="margin:0.5rem 0; display:flex; gap:0.4rem; flex-wrap:wrap;">
+      <button type="button" onclick="beatComposer.addEvent('narrative')">+ Narrative</button>
+      <button type="button" onclick="beatComposer.addEvent('ooc')">+ OOC</button>
+      <button type="button" onclick="beatComposer.addEvent('roll')">+ Roll</button>
     </div>
-    <button type="submit">Submit Beat</button>
+    <button type="submit" style="margin-top:0.25rem;">Submit Beat</button>
   </form>
+  <script>
+  const beatComposer = {
+    _labels: { narrative: 'Narrative', ooc: 'OOC (out of character)', roll: 'Roll' },
+    _placeholders: {
+      narrative: 'Describe what happens\u2026',
+      ooc: 'Out-of-character comment or question\u2026',
+    },
+
+    addEvent(type) {
+      const container = document.getElementById('events-container');
+      const row = document.createElement('div');
+      row.className = 'event-row';
+      row.style.cssText = 'border:1px solid #ddd; padding:0.75rem; margin-bottom:0.5rem; border-radius:4px;';
+
+      const isRoll = type === 'roll';
+      row.innerHTML = `
+        <div style="font-size:0.85rem; font-weight:bold; color:#555; margin-bottom:0.5rem; text-transform:uppercase; letter-spacing:0.04em;">
+          ${this._labels[type]}
+          <button type="button" class="remove-btn"
+            onclick="beatComposer.removeEvent(this)"
+            style="float:right; font-size:0.8rem; font-weight:normal; display:none;">Remove</button>
+        </div>
+        <input type="hidden" name="event_type" value="${type}">
+        <div class="field-content" style="${isRoll ? 'display:none;' : ''}">
+          <textarea name="event_content" rows="3"
+            style="width:100%; max-width:36rem;"
+            placeholder="${this._placeholders[type] || ''}"></textarea>
+        </div>
+        <div class="field-roll" style="${isRoll ? '' : 'display:none;'}">
+          <div style="margin-bottom:0.3rem;">
+            <label style="font-size:0.9rem;">Notation:&nbsp;
+              <input name="event_notation" type="text" placeholder="e.g. 2d6+3" style="width:9rem;">
+            </label>
+          </div>
+          <div>
+            <label style="font-size:0.9rem;">Reason:&nbsp;
+              <input name="event_reason" type="text" placeholder="Optional reason" style="width:20rem;">
+            </label>
+          </div>
+        </div>`;
+
+      container.appendChild(row);
+      this._updateRemoveButtons();
+    },
+
+    removeEvent(btn) {
+      btn.closest('.event-row').remove();
+      this._updateRemoveButtons();
+    },
+
+    _updateRemoveButtons() {
+      const rows = document.querySelectorAll('.event-row');
+      rows.forEach(row => {
+        row.querySelector('.remove-btn').style.display = rows.length > 1 ? '' : 'none';
+      });
+    },
+  };
+
+  beatComposer.addEvent('narrative');
+  </script>
   {% else %}
   <p style="color:#888; font-style:italic;">Beat submission is only available for active scenes.</p>
   {% endif %}

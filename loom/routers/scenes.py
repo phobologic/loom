@@ -293,6 +293,9 @@ async def scene_detail(
     )
 
 
+_BEAT_EVENT_TYPES = {"narrative", "ooc", "roll"}
+
+
 @router.post(
     "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
     response_class=RedirectResponse,
@@ -301,11 +304,14 @@ async def submit_beat(
     game_id: int,
     act_id: int,
     scene_id: int,
-    content: str = Form(...),
+    event_type: list[str] = Form(default=[]),
+    event_content: list[str] = Form(default=[]),
+    event_notation: list[str] = Form(default=[]),
+    event_reason: list[str] = Form(default=[]),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
-    """Submit a minor narrative beat. Instantly becomes canon."""
+    """Submit a beat with one or more events (narrative, OOC, or roll)."""
     scene = await _load_scene_for_view(scene_id, db)
     if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
         raise HTTPException(status_code=404, detail="Scene not found")
@@ -320,8 +326,39 @@ async def submit_beat(
             status_code=403, detail="Beats can only be submitted for an active scene"
         )
 
-    if not content.strip():
-        raise HTTPException(status_code=422, detail="Beat content cannot be empty")
+    # Pad shorter lists to align with event_type
+    n = len(event_type)
+    padded_content = (list(event_content) + [""] * n)[:n]
+    padded_notation = (list(event_notation) + [""] * n)[:n]
+    padded_reason = (list(event_reason) + [""] * n)[:n]
+
+    # Validate and build event specs
+    event_specs: list[dict] = []
+    for etype, econtent, enotation, ereason in zip(
+        event_type, padded_content, padded_notation, padded_reason
+    ):
+        etype = etype.strip()
+        if etype not in _BEAT_EVENT_TYPES:
+            raise HTTPException(status_code=422, detail=f"Invalid event type: {etype!r}")
+
+        if etype in ("narrative", "ooc"):
+            content = econtent.strip()
+            if not content:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{etype.capitalize()} event requires content",
+                )
+            event_specs.append({"type": etype, "content": content})
+        else:  # roll
+            notation = enotation.strip()
+            if not notation:
+                raise HTTPException(status_code=422, detail="Roll event requires notation")
+            event_specs.append(
+                {"type": "roll", "notation": notation, "reason": ereason.strip() or None}
+            )
+
+    if not event_specs:
+        raise HTTPException(status_code=422, detail="A beat must have at least one event")
 
     next_order = max((b.order for b in scene.beats), default=0) + 1
 
@@ -335,13 +372,24 @@ async def submit_beat(
     db.add(beat)
     await db.flush()
 
-    event = Event(
-        beat_id=beat.id,
-        type=EventType.narrative,
-        content=content.strip(),
-        order=1,
-    )
-    db.add(event)
+    for i, spec in enumerate(event_specs):
+        if spec["type"] in ("narrative", "ooc"):
+            event = Event(
+                beat_id=beat.id,
+                type=EventType[spec["type"]],
+                content=spec["content"],
+                order=i + 1,
+            )
+        else:  # roll
+            event = Event(
+                beat_id=beat.id,
+                type=EventType.roll,
+                roll_notation=spec["notation"],
+                content=spec["reason"],
+                order=i + 1,
+            )
+        db.add(event)
+
     await db.commit()
 
     return RedirectResponse(

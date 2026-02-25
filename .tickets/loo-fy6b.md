@@ -1,6 +1,6 @@
 ---
 id: loo-fy6b
-status: open
+status: closed
 deps: [loo-r09h]
 links: []
 created: 2026-02-25T01:22:43Z

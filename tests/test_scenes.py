@@ -17,6 +17,7 @@ from loom.models import (
     BeatStatus,
     Character,
     Event,
+    EventType,
     Game,
     GameMember,
     GameStatus,
@@ -821,6 +822,11 @@ async def _get_beats(scene_id: int) -> list[Beat]:
         return list(result.scalars().all())
 
 
+def _narrative_data(content: str) -> dict:
+    """Build form data for a single narrative event."""
+    return {"event_type": "narrative", "event_content": content}
+
+
 class TestSubmitBeat:
     async def test_creates_beat_with_narrative_event(self, client: AsyncClient) -> None:
         game_id = await _create_active_game(client)
@@ -829,7 +835,7 @@ class TestSubmitBeat:
 
         await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "The hero steps forward."},
+            data=_narrative_data("The hero steps forward."),
             follow_redirects=False,
         )
         beats = await _get_beats(scene_id)
@@ -844,7 +850,7 @@ class TestSubmitBeat:
 
         await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "Action."},
+            data=_narrative_data("Action."),
             follow_redirects=False,
         )
         beats = await _get_beats(scene_id)
@@ -857,12 +863,10 @@ class TestSubmitBeat:
 
         await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "Action."},
+            data=_narrative_data("Action."),
             follow_redirects=False,
         )
         beats = await _get_beats(scene_id)
-        from loom.models import EventType
-
         assert beats[0].events[0].type == EventType.narrative
 
     async def test_beat_order_increments(self, client: AsyncClient) -> None:
@@ -872,12 +876,12 @@ class TestSubmitBeat:
 
         await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "First."},
+            data=_narrative_data("First."),
             follow_redirects=False,
         )
         await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "Second."},
+            data=_narrative_data("Second."),
             follow_redirects=False,
         )
         beats = await _get_beats(scene_id)
@@ -891,7 +895,7 @@ class TestSubmitBeat:
 
         response = await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "Action."},
+            data=_narrative_data("Action."),
             follow_redirects=False,
         )
         assert response.status_code == 303
@@ -905,7 +909,7 @@ class TestSubmitBeat:
 
         response = await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "Sneaky."},
+            data=_narrative_data("Sneaky."),
             follow_redirects=False,
         )
         assert response.status_code == 403
@@ -917,7 +921,7 @@ class TestSubmitBeat:
 
         response = await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "   "},
+            data=_narrative_data("   "),
             follow_redirects=False,
         )
         assert response.status_code == 422
@@ -939,7 +943,7 @@ class TestSubmitBeat:
 
         response = await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "Too late."},
+            data=_narrative_data("Too late."),
             follow_redirects=False,
         )
         assert response.status_code == 403
@@ -951,7 +955,7 @@ class TestSubmitBeat:
 
         await client.post(
             f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
-            data={"content": "A dramatic entrance."},
+            data=_narrative_data("A dramatic entrance."),
             follow_redirects=False,
         )
         response = await client.get(
@@ -970,3 +974,140 @@ class TestSubmitBeat:
             follow_redirects=False,
         )
         assert b"Submit Beat" in response.content
+
+    async def test_rejects_no_events(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={},
+            follow_redirects=False,
+        )
+        assert response.status_code == 422
+
+    async def test_rejects_invalid_event_type(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"event_type": "oracle", "event_content": "Something"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 422
+
+
+class TestSubmitBeatMultiEvent:
+    async def test_ooc_event_stored(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"event_type": "ooc", "event_content": "Does this trigger a safety tool?"},
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert len(beats) == 1
+        assert beats[0].events[0].type == EventType.ooc
+        assert beats[0].events[0].content == "Does this trigger a safety tool?"
+
+    async def test_roll_event_stored(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={
+                "event_type": "roll",
+                "event_notation": "2d6+3",
+                "event_reason": "Climbing the wall",
+            },
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert len(beats) == 1
+        ev = beats[0].events[0]
+        assert ev.type == EventType.roll
+        assert ev.roll_notation == "2d6+3"
+        assert ev.content == "Climbing the wall"
+        assert ev.roll_result is None  # dice not yet rolled
+
+    async def test_roll_without_reason(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"event_type": "roll", "event_notation": "1d20"},
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        ev = beats[0].events[0]
+        assert ev.roll_notation == "1d20"
+        assert ev.content is None
+
+    async def test_roll_requires_notation(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"event_type": "roll", "event_notation": ""},
+            follow_redirects=False,
+        )
+        assert response.status_code == 422
+
+    async def test_multi_event_beat_stored_in_order(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={
+                "event_type": ["narrative", "roll", "ooc"],
+                "event_content": ["She draws her sword.", "", "Should this trigger tension?"],
+                "event_notation": ["", "2d6", ""],
+                "event_reason": ["", "Attack", ""],
+            },
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert len(beats) == 1
+        events = beats[0].events
+        assert len(events) == 3
+        assert events[0].type == EventType.narrative
+        assert events[0].order == 1
+        assert events[1].type == EventType.roll
+        assert events[1].order == 2
+        assert events[1].roll_notation == "2d6"
+        assert events[2].type == EventType.ooc
+        assert events[2].order == 3
+
+    async def test_multi_event_all_appear_in_timeline(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={
+                "event_type": ["narrative", "ooc"],
+                "event_content": ["The vault door slides open.", "Was that too easy?"],
+            },
+            follow_redirects=False,
+        )
+        response = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            follow_redirects=False,
+        )
+        assert b"The vault door slides open." in response.content
+        assert b"Was that too easy?" in response.content
