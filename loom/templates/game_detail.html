@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}{{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }}</h1>
+<p><strong>Status:</strong> {{ game.status.value | capitalize }}</p>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="#" aria-disabled="true">Acts</a> |
+    <a href="#" aria-disabled="true">Settings</a> |
+    <a href="#" aria-disabled="true">World Doc</a>
+</nav>
+
+<h2>Members ({{ members | length }}/5)</h2>
+<ul>
+    {% for m in members %}
+    <li>
+        {{ m.user.display_name }}
+        {% if m.role.value == "organizer" %}<em>(organizer)</em>{% endif %}
+    </li>
+    {% endfor %}
+</ul>
+
+{% if current_member.role.value == "organizer" %}
+<h2>Invite Link</h2>
+{% if invite_url %}
+<p>Share this link with players:</p>
+<code>{{ invite_url }}</code>
+<div style="margin-top:0.5rem;">
+    <form method="post" action="/games/{{ game.id }}/invite/regenerate" style="display:inline;">
+        <button type="submit">Regenerate</button>
+    </form>
+    <form method="post" action="/games/{{ game.id }}/invite/revoke" style="display:inline; margin-left:0.5rem;">
+        <button type="submit">Revoke</button>
+    </form>
+</div>
+{% else %}
+<p>Invite link has been revoked.</p>
+<form method="post" action="/games/{{ game.id }}/invite/regenerate">
+    <button type="submit">Generate new invite link</button>
+</form>
+{% endif %}
+{% endif %}
+
+<p style="margin-top:1rem;"><a href="/games">&larr; My Games</a></p>
+{% endblock %}

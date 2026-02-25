@@ -8,12 +8,27 @@
 {% if games %}
 <ul>
     {% for game in games %}
-    <li>{{ game.name }}</li>
+    <li><a href="/games/{{ game.id }}">{{ game.name }}</a></li>
     {% endfor %}
 </ul>
 {% else %}
 <p>You have no games yet.</p>
 {% endif %}
+
+<hr>
+<h2>Create a new game</h2>
+<form method="post" action="/games">
+    <div>
+        <label for="name">Game name (required)</label><br>
+        <input type="text" id="name" name="name" required maxlength="200">
+    </div>
+    <div style="margin-top:0.5rem;">
+        <label for="pitch">Pitch / description (optional)</label><br>
+        <textarea id="pitch" name="pitch" rows="3" cols="40"></textarea>
+    </div>
+    <button type="submit" style="margin-top:0.5rem;">Create game</button>
+</form>
+
 <form method="post" action="/dev/logout" style="margin-top:1rem;">
     <button type="submit">Log out</button>
 </form>

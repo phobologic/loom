@@ -1,6 +1,6 @@
 ---
 id: loo-vyev
-status: open
+status: in_progress
 deps: [loo-2d5u]
 links: []
 created: 2026-02-25T01:22:41Z

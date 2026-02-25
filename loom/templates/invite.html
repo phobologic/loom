@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}{% if game %}Join {{ game.name }}{% else %}Invalid Invite{% endif %} — Loom{% endblock %}
+
+{% block content %}
+{% if error %}
+<h1>Invite Unavailable</h1>
+<p>{{ error }}</p>
+<p><a href="/games">Go to My Games</a></p>
+{% else %}
+<h1>Join {{ game.name }}</h1>
+<p>{{ member_count }}/{{ max_players }} players have joined.</p>
+{% if is_full %}
+<p><strong>This game is full.</strong></p>
+{% else %}
+<form method="post" action="/invite/{{ token }}">
+    <button type="submit">Join game</button>
+</form>
+{% endif %}
+<p style="margin-top:1rem;"><a href="/games">Go to My Games</a></p>
+{% endif %}
+{% endblock %}

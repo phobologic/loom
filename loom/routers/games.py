@@ -2,20 +2,33 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import HTMLResponse
+import secrets
+
+from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
 from loom.database import get_db
 from loom.dependencies import get_current_user
-from loom.models import Game, GameMember, User
+from loom.models import Game, GameMember, GameStatus, MemberRole, User
 
 templates = Jinja2Templates(directory="loom/templates")
 
 router = APIRouter()
+
+MAX_GAME_PLAYERS = 5
+
+
+def _find_membership(game: Game, user_id: int) -> GameMember | None:
+    """Return the GameMember record for user_id in game, or None."""
+    for m in game.members:
+        if m.user_id == user_id:
+            return m
+    return None
 
 
 @router.get("/games", response_class=HTMLResponse)
@@ -33,3 +46,196 @@ async def my_games(
     )
     games = result.scalars().all()
     return templates.TemplateResponse(request, "games.html", {"user": current_user, "games": games})
+
+
+@router.post("/games", response_class=RedirectResponse)
+async def create_game(
+    request: Request,
+    name: str = Form(...),
+    pitch: str = Form(""),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Create a new game and redirect to its dashboard."""
+    game = Game(
+        name=name,
+        pitch=pitch or None,
+        status=GameStatus.setup,
+        invite_token=secrets.token_urlsafe(32),
+    )
+    db.add(game)
+    await db.flush()
+    member = GameMember(game_id=game.id, user_id=current_user.id, role=MemberRole.organizer)
+    db.add(member)
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game.id}", status_code=303)
+
+
+@router.get("/games/{game_id}", response_class=HTMLResponse)
+async def game_detail(
+    game_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Show the game dashboard shell."""
+    result = await db.execute(
+        select(Game)
+        .where(Game.id == game_id)
+        .options(selectinload(Game.members).selectinload(GameMember.user))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    invite_url = None
+    if current_member.role == MemberRole.organizer and game.invite_token:
+        invite_url = str(request.base_url) + f"invite/{game.invite_token}"
+
+    return templates.TemplateResponse(
+        request,
+        "game_detail.html",
+        {
+            "game": game,
+            "members": game.members,
+            "current_member": current_member,
+            "invite_url": invite_url,
+        },
+    )
+
+
+@router.get("/invite/{token}", response_class=HTMLResponse)
+async def invite_landing(
+    token: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Show the invite landing page for a game."""
+    result = await db.execute(
+        select(Game).where(Game.invite_token == token).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        return templates.TemplateResponse(
+            request,
+            "invite.html",
+            {"game": None, "error": "Invite link is invalid or has been revoked."},
+        )
+
+    # If already a member, redirect to the dashboard
+    user_id = request.session.get("user_id")
+    if user_id and _find_membership(game, int(user_id)):
+        return RedirectResponse(url=f"/games/{game.id}", status_code=303)
+
+    return templates.TemplateResponse(
+        request,
+        "invite.html",
+        {
+            "game": game,
+            "token": token,
+            "member_count": len(game.members),
+            "max_players": MAX_GAME_PLAYERS,
+            "is_full": len(game.members) >= MAX_GAME_PLAYERS,
+            "error": None,
+        },
+    )
+
+
+@router.post("/invite/{token}", response_class=RedirectResponse, response_model=None)
+async def join_game(
+    token: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse | HTMLResponse:
+    """Join a game via invite token."""
+    result = await db.execute(
+        select(Game).where(Game.invite_token == token).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        return templates.TemplateResponse(
+            request,
+            "invite.html",
+            {"game": None, "error": "Invite link is invalid or has been revoked."},
+            status_code=404,
+        )
+
+    # Already a member — just redirect
+    if _find_membership(game, current_user.id):
+        return RedirectResponse(url=f"/games/{game.id}", status_code=303)
+
+    # Enforce player cap
+    if len(game.members) >= MAX_GAME_PLAYERS:
+        return templates.TemplateResponse(
+            request,
+            "invite.html",
+            {
+                "game": game,
+                "token": token,
+                "member_count": len(game.members),
+                "max_players": MAX_GAME_PLAYERS,
+                "is_full": True,
+                "error": "This game is full (maximum 5 players).",
+            },
+            status_code=409,
+        )
+
+    member = GameMember(game_id=game.id, user_id=current_user.id, role=MemberRole.player)
+    db.add(member)
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game.id}", status_code=303)
+
+
+@router.post("/games/{game_id}/invite/regenerate", response_class=RedirectResponse)
+async def regenerate_invite(
+    game_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Regenerate the invite token for a game (organizer only)."""
+    result = await db.execute(
+        select(Game).where(Game.id == game_id).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(
+            status_code=403, detail="Only the organizer can regenerate the invite link"
+        )
+
+    game.invite_token = secrets.token_urlsafe(32)
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+
+
+@router.post("/games/{game_id}/invite/revoke", response_class=RedirectResponse)
+async def revoke_invite(
+    game_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Revoke the invite token for a game (organizer only)."""
+    result = await db.execute(
+        select(Game).where(Game.id == game_id).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can revoke the invite link")
+
+    game.invite_token = None
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}", status_code=303)
