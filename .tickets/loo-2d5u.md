@@ -1,6 +1,6 @@
 ---
 id: loo-2d5u
-status: open
+status: closed
 deps: [loo-0pek]
 links: []
 created: 2026-02-25T01:22:41Z
