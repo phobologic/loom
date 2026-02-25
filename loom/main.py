@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from loom import models as _models  # noqa: F401 - registers models with Base.metadata
 from loom.database import Base, engine
 from loom.routers import pages
 

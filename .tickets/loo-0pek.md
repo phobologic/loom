@@ -1,6 +1,6 @@
 ---
 id: loo-0pek
-status: open
+status: closed
 deps: [loo-46aj]
 links: []
 created: 2026-02-25T01:22:41Z

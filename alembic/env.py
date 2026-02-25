@@ -4,6 +4,7 @@ from logging.config import fileConfig
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
+from loom import models as _models  # noqa: F401 - registers models with Base.metadata
 from loom.config import settings
 from loom.database import Base
 
