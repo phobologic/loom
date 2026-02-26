@@ -222,12 +222,14 @@ class User(TimestampMixin, Base):
     """A Loom user account."""
 
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("oauth_provider", "oauth_subject", name="uq_users_oauth"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     oauth_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     oauth_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notify_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     memberships: Mapped[list[GameMember]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

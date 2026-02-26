@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In — Loom{% endblock %}
+
+{% block content %}
+<h1>Sign In to Loom</h1>
+
+<div style="display:flex; flex-direction:column; gap:0.75rem; max-width:280px;">
+  <a href="/auth/google">
+    <button type="button" style="width:100%;">Sign in with Google</button>
+  </a>
+  <a href="/auth/discord">
+    <button type="button" style="width:100%;">Sign in with Discord</button>
+  </a>
+</div>
+
+{% if is_dev %}
+<hr style="margin:2rem 0;">
+<p><small><a href="/dev/login">Dev login (local only)</a></small></p>
+{% endif %}
+{% endblock %}

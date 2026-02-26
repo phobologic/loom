@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     debug: bool = True
     session_secret_key: str = "dev-secret-change-me"
 
+    # OAuth providers
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    discord_client_id: str = ""
+    discord_client_secret: str = ""
+
     # Anthropic API
     anthropic_api_key: str = ""
 

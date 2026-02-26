@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Profile — Loom{% endblock %}
+
+{% block content %}
+<h1>Your Profile</h1>
+
+<form method="post" action="/profile">
+  <div>
+    <label for="display_name">Display Name</label><br>
+    <input type="text" id="display_name" name="display_name"
+           value="{{ profile_user.display_name }}" maxlength="100" required>
+  </div>
+
+  <div style="margin-top:0.75rem;">
+    <label>
+      <input type="checkbox" name="notify_enabled" value="true"
+             {% if profile_user.notify_enabled %}checked{% endif %}>
+      Enable in-app notifications
+    </label>
+  </div>
+
+  <div style="margin-top:1rem;">
+    <button type="submit">Save</button>
+  </div>
+</form>
+
+<h2 style="margin-top:2rem;">Your Games</h2>
+{% if profile_user.memberships %}
+<ul>
+  {% for membership in profile_user.memberships %}
+  <li>
+    <a href="/games/{{ membership.game.id }}">{{ membership.game.name }}</a>
+    <small>({{ membership.role }})</small>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>You haven't joined any games yet. <a href="/games">Browse games</a>.</p>
+{% endif %}
+
+<hr style="margin:2rem 0;">
+<form method="post" action="/logout">
+  <button type="submit">Sign Out</button>
+</form>
+{% endblock %}

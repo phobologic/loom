@@ -77,7 +77,7 @@ class TestGamesPage:
     async def test_requires_auth(self, client: AsyncClient) -> None:
         response = await client.get("/games", follow_redirects=False)
         assert response.status_code == 302
-        assert "/dev/login" in response.headers["location"]
+        assert "/login" in response.headers["location"]
 
     async def test_shows_username_when_authenticated(self, client: AsyncClient) -> None:
         await client.post("/dev/login", data={"user_id": "1"}, follow_redirects=False)

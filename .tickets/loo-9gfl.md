@@ -1,6 +1,6 @@
 ---
 id: loo-9gfl
-status: open
+status: closed
 deps: [loo-y4bs]
 links: []
 created: 2026-02-25T01:22:44Z

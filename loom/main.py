@@ -24,6 +24,7 @@ from loom.routers import (
     notifications,
     oracles,
     pages,
+    profile,
     safety_tools,
     scenes,
     session0,
@@ -48,7 +49,8 @@ async def _seed_dev_users() -> None:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    await _seed_dev_users()
+    if settings.environment != "production":
+        await _seed_dev_users()
     yield
 
 
@@ -63,6 +65,7 @@ app.mount(
 )
 app.include_router(pages.router)
 app.include_router(auth.router)
+app.include_router(profile.router)
 app.include_router(games.router)
 app.include_router(acts.router)
 app.include_router(session0.router)
@@ -77,4 +80,4 @@ app.include_router(notifications.router)
 
 @app.exception_handler(_AuthRedirect)
 async def auth_redirect_handler(request: Request, exc: _AuthRedirect) -> RedirectResponse:
-    return RedirectResponse(url="/dev/login", status_code=302)
+    return RedirectResponse(url="/login", status_code=302)

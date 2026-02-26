@@ -94,14 +94,14 @@ class TestCreateGame:
     async def test_requires_auth(self, client: AsyncClient) -> None:
         response = await client.post("/games", data={"name": "x"}, follow_redirects=False)
         assert response.status_code == 302
-        assert "/dev/login" in response.headers["location"]
+        assert "/login" in response.headers["location"]
 
 
 class TestGameDashboard:
     async def test_requires_auth(self, client: AsyncClient) -> None:
         response = await client.get("/games/1", follow_redirects=False)
         assert response.status_code == 302
-        assert "/dev/login" in response.headers["location"]
+        assert "/login" in response.headers["location"]
 
     async def test_requires_membership(self, client: AsyncClient) -> None:
         # User 1 creates the game
@@ -300,7 +300,7 @@ class TestGameSettings:
         await client.post("/dev/logout", follow_redirects=False)
         response = await client.get(f"/games/{game_id}/settings", follow_redirects=False)
         assert response.status_code == 302
-        assert "/dev/login" in response.headers["location"]
+        assert "/login" in response.headers["location"]
 
     async def test_settings_requires_membership(self, client: AsyncClient) -> None:
         await _login(client, 1)
