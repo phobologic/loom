@@ -83,6 +83,26 @@
   >
     {% include "_beats_partial.html" %}
   </div>
+  <script>
+  (function () {
+    var openSummaries = [];
+    var tl = document.getElementById('beat-timeline');
+    tl.addEventListener('htmx:beforeSwap', function () {
+      openSummaries = Array.from(tl.querySelectorAll('details[open] summary')).map(function (s) {
+        return s.textContent.trim();
+      });
+    });
+    tl.addEventListener('htmx:afterSwap', function () {
+      if (!openSummaries.length) return;
+      tl.querySelectorAll('details summary').forEach(function (s) {
+        if (openSummaries.indexOf(s.textContent.trim()) !== -1) {
+          s.parentElement.open = true;
+        }
+      });
+      openSummaries = [];
+    });
+  })();
+  </script>
 </section>
 
 <section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
