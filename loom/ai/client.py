@@ -24,6 +24,7 @@ from loom.ai.context import (
 from loom.ai.provider import UsageInfo, get_provider
 from loom.ai.schemas import (
     BeatClassification,
+    ConsistencyCheckResponse,
     OracleResponse,
     ProseExpansion,
     SynthesisResponse,
@@ -444,3 +445,79 @@ async def expand_beat_prose(
         )
 
     return response.prose
+
+
+async def check_beat_consistency(
+    game: Game,
+    scene: Scene,
+    beat_text: str,
+    roll_results: list[tuple[str, int]] | None = None,
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> list[str]:
+    """Check a beat draft for consistency with established fiction before submission.
+
+    Args:
+        game: Fully loaded game (world_document, safety_tools loaded).
+        scene: Current scene (act, characters_present, beats with events loaded).
+        beat_text: The narrative text the player is about to submit.
+        roll_results: Optional list of (notation, total) for rolls included in the
+            same beat — used to check whether the narrative matches roll outcomes.
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        A list of player-facing flag strings describing inconsistencies, or an
+        empty list if the beat is consistent with the established fiction.
+    """
+    scene_ctx = assemble_scene_context(
+        game, scene, beat_history_window=settings.ai_context_beat_history_window
+    )
+    tension_ctx = format_tension_context(scene.tension)
+    context_comps = scene_context_components(game, scene)
+
+    system = (
+        "You are a continuity editor for a collaborative tabletop RPG. "
+        "Your role is to catch factual inconsistencies between a beat draft and the "
+        "established fiction — not to judge creative choices, style, or tone. "
+        "Flag only clear contradictions: facts established in prior beats, "
+        "safety-tool violations (lines and veils), and roll-result mismatches. "
+        "If the beat is consistent, return an empty flags list."
+    )
+
+    prompt_parts = [scene_ctx, tension_ctx]
+
+    if roll_results:
+        roll_lines = ["ROLLS IN THIS BEAT:"]
+        for notation, total in roll_results:
+            roll_lines.append(f"  {notation} → {total}")
+        prompt_parts.append("\n".join(roll_lines))
+
+    prompt_parts.append(
+        f"BEAT DRAFT (not yet submitted):\n{beat_text}\n\n"
+        "Check the beat draft against the established fiction above. "
+        "Report only factual inconsistencies, safety-tool violations, or roll-result mismatches. "
+        "Do not flag style choices, narrative gaps, or anything not clearly contradicted by the context."
+    )
+
+    model = settings.ai_model_classification
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt="\n\n".join(prompt_parts),
+        model=model,
+        max_tokens=512,
+        response_model=ConsistencyCheckResponse,
+    )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="check_beat_consistency",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
+    return response.flags

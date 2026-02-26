@@ -829,6 +829,102 @@ def _narrative_data(content: str) -> dict:
     return {"event_type": "narrative", "event_content": content}
 
 
+# ---------------------------------------------------------------------------
+# Beat consistency check (REQ-BEAT-005)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckBeat:
+    async def test_returns_empty_flags_for_clean_beat(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/check",
+            data={"event_type": "narrative", "event_content": "The hero steps forward."},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"flags": []}
+
+    async def test_returns_flags_when_ai_finds_issues(
+        self, client: AsyncClient, monkeypatch
+    ) -> None:
+        async def _flagging_check(
+            game, scene, beat_text, roll_results=None, *, db=None, game_id=None
+        ):
+            return ["You rolled a partial success but this reads like a full success."]
+
+        monkeypatch.setattr("loom.routers.scenes.check_beat_consistency", _flagging_check)
+
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/check",
+            data={"event_type": "narrative", "event_content": "Everything goes perfectly."},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["flags"]) == 1
+        assert "partial success" in data["flags"][0]
+
+    async def test_ooc_only_beat_returns_empty_flags(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/check",
+            data={"event_type": "ooc", "event_content": "Should we take a break?"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"flags": []}
+
+    async def test_requires_membership(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+        await _login(client, 2)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/check",
+            data={"event_type": "narrative", "event_content": "Action."},
+        )
+        assert response.status_code == 403
+
+    async def test_ai_failure_returns_empty_flags(self, client: AsyncClient, monkeypatch) -> None:
+        async def _exploding_check(
+            game, scene, beat_text, roll_results=None, *, db=None, game_id=None
+        ):
+            raise RuntimeError("AI is down")
+
+        monkeypatch.setattr("loom.routers.scenes.check_beat_consistency", _exploding_check)
+
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/check",
+            data={"event_type": "narrative", "event_content": "The hero acts bravely."},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"flags": []}
+
+    async def test_404_for_wrong_scene(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+
+        response = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/9999/beats/check",
+            data={"event_type": "narrative", "event_content": "Action."},
+        )
+        assert response.status_code == 404
+
+
 class TestSubmitBeat:
     async def test_creates_beat_with_narrative_event(self, client: AsyncClient) -> None:
         game_id = await _create_active_game(client)

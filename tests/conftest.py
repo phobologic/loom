@@ -29,9 +29,16 @@ def mock_ai(monkeypatch):
     async def _generate_world_document(session0_data, *, db=None, game_id=None):
         return "# World Document\n\nThis world is shaped by the choices made at its founding..."
 
+    async def _check_beat_consistency(
+        game, scene, beat_text, roll_results=None, *, db=None, game_id=None
+    ):
+        return []
+
     monkeypatch.setattr("loom.ai.client.oracle_interpretations", _oracle_interpretations)
     monkeypatch.setattr("loom.ai.client.session0_synthesis", _session0_synthesis)
     monkeypatch.setattr("loom.ai.client.generate_world_document", _generate_world_document)
+    monkeypatch.setattr("loom.ai.client.check_beat_consistency", _check_beat_consistency)
+    monkeypatch.setattr("loom.routers.scenes.check_beat_consistency", _check_beat_consistency)
 
     # Also patch the imported names in the routers so the monkeypatches take effect
     monkeypatch.setattr("loom.routers.oracles.ai_oracle_interpretations", _oracle_interpretations)

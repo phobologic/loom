@@ -270,7 +270,12 @@
       </select>
     </div>
     {% endif %}
-    <button type="submit" style="margin-top:0.25rem;">Submit Beat</button>
+    <div id="consistency-results" style="display:none; margin:0.75rem 0; padding:0.75rem; background:#fff8e6; border:1px solid #e0b84d; border-radius:4px; max-width:36rem;"></div>
+    <div style="margin-top:0.25rem; display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+      <button type="button" id="check-submit-btn" onclick="beatComposer.checkAndSubmit(event)">Submit Beat</button>
+      <button type="button" id="submit-anyway-btn" onclick="beatComposer.submitAnyway()" style="display:none;">Submit Anyway</button>
+      <button type="button" id="revise-btn" onclick="beatComposer.dismissCheck()" style="display:none;">Revise</button>
+    </div>
   </form>
   <script>
   const beatComposer = {
@@ -327,6 +332,57 @@
       rows.forEach(row => {
         row.querySelector('.remove-btn').style.display = rows.length > 1 ? '' : 'none';
       });
+    },
+
+    async checkAndSubmit(e) {
+      const form = e.target.closest('form');
+      const checkBtn = document.getElementById('check-submit-btn');
+      const resultsDiv = document.getElementById('consistency-results');
+
+      checkBtn.disabled = true;
+      checkBtn.textContent = 'Checking\u2026';
+      resultsDiv.style.display = 'none';
+
+      try {
+        const checkUrl = form.action + '/check';
+        const resp = await fetch(checkUrl, { method: 'POST', body: new FormData(form) });
+        if (!resp.ok) throw new Error('check failed');
+        const data = await resp.json();
+
+        if (!data.flags || data.flags.length === 0) {
+          form.submit();
+          return;
+        }
+
+        // Show flags
+        let html = '<strong style="font-size:0.9rem;">Consistency check flagged the following:</strong><ul style="margin:0.4rem 0 0.5rem 1.2rem; padding:0;">';
+        data.flags.forEach(f => { html += `<li style="font-size:0.9rem; margin-bottom:0.2rem;">${f}</li>`; });
+        html += '</ul><p style="font-size:0.85rem; color:#666; margin:0;">These are advisory only &mdash; you can revise your beat or submit anyway.</p>';
+        resultsDiv.innerHTML = html;
+        resultsDiv.style.display = '';
+
+        checkBtn.style.display = 'none';
+        document.getElementById('submit-anyway-btn').style.display = '';
+        document.getElementById('revise-btn').style.display = '';
+      } catch (_) {
+        // AI check failed — fall through to normal submission
+        form.submit();
+      }
+    },
+
+    submitAnyway() {
+      const form = document.getElementById('check-submit-btn').closest('form');
+      form.submit();
+    },
+
+    dismissCheck() {
+      document.getElementById('consistency-results').style.display = 'none';
+      document.getElementById('submit-anyway-btn').style.display = 'none';
+      document.getElementById('revise-btn').style.display = 'none';
+      const checkBtn = document.getElementById('check-submit-btn');
+      checkBtn.style.display = '';
+      checkBtn.disabled = false;
+      checkBtn.textContent = 'Submit Beat';
     },
   };
 

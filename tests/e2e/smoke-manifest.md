@@ -241,3 +241,23 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 - Clicking "Edit & Apply" allows Alice to modify the prose before applying; the edited version is stored and displayed.
 - If Alice's prose_mode is "never", no suggestion panel appears for any beat.
 **Severity if broken:** P1
+
+---
+
+## 25. AI Pre-submission Consistency Check (REQ-BEAT-005)
+
+**Preconditions:** Active scene with at least one existing canon beat and a world document. Alice is a member.
+**Actions:**
+1. Alice adds a narrative event to the beat composer with content that clearly contradicts the established fiction (e.g., a character takes an action they were established as unable to do).
+2. Alice clicks "Submit Beat" (the normal submit button).
+3. Wait for the consistency check to complete (button shows "Checking…").
+**Pass criteria:**
+- The submit button becomes "Checking…" while the AI check runs.
+- If the AI finds no issues, the form submits normally (beat appears in the timeline).
+- If the AI finds issues, an amber warning box appears below the form listing the flags as a bulleted list. Two new buttons appear: "Submit Anyway" and "Revise".
+- "Submit Anyway" submits the beat without changes — it appears in the timeline.
+- "Revise" dismisses the warning box and re-enables the "Submit Beat" button, allowing Alice to edit the beat.
+- The check is advisory only — the beat is never blocked.
+- If the AI is unavailable, the form submits normally (no error shown, no blocking).
+- Other players (Bob) are not shown the consistency warning — it is visible only to the author before submission.
+**Severity if broken:** P2

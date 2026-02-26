@@ -6,13 +6,13 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
-from loom.ai.client import expand_beat_prose
+from loom.ai.client import check_beat_consistency, expand_beat_prose
 from loom.database import AsyncSessionLocal, get_db
 from loom.dependencies import get_current_user
 from loom.dice import DiceError
@@ -861,6 +861,98 @@ def _should_offer_prose(member: GameMember, user: User, narrative_events: list[E
             len((e.content or "").split()) < user.prose_threshold_words for e in narrative_events
         )
     return True  # "always"
+
+
+async def _load_scene_for_consistency_check(scene_id: int, db: AsyncSession) -> Scene | None:
+    """Load a scene with the context needed for the AI consistency check.
+
+    Extends the base scene view with world_document and safety_tools, which are
+    required by assemble_scene_context but not loaded by _load_scene_for_view.
+    """
+    result = await db.execute(
+        select(Scene)
+        .where(Scene.id == scene_id)
+        .options(
+            selectinload(Scene.act).selectinload(Act.game).selectinload(Game.world_document),
+            selectinload(Scene.act).selectinload(Act.game).selectinload(Game.safety_tools),
+            selectinload(Scene.act).selectinload(Act.game).selectinload(Game.members),
+            selectinload(Scene.characters_present),
+            selectinload(Scene.beats).selectinload(Beat.events),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+@router.post(
+    "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/check",
+    response_class=JSONResponse,
+)
+async def check_beat(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    event_type: list[str] = Form(default=[]),
+    event_content: list[str] = Form(default=[]),
+    event_notation: list[str] = Form(default=[]),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """AI consistency check for a beat draft before submission.
+
+    Returns {"flags": [...]} — a list of advisory inconsistency strings.
+    Always returns 200 with an empty flags list on AI failure, so the caller
+    can fall through to normal submission without blocking the player.
+    """
+    scene = await _load_scene_for_consistency_check(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="Not a member of this game")
+
+    # Collect narrative text and evaluate rolls server-side
+    n = len(event_type)
+    padded_content = (list(event_content) + [""] * n)[:n]
+    padded_notation = (list(event_notation) + [""] * n)[:n]
+
+    narrative_parts: list[str] = []
+    roll_results: list[tuple[str, int]] = []
+    for etype, econtent, enotation in zip(event_type, padded_content, padded_notation):
+        etype = etype.strip()
+        if etype == "narrative":
+            text = econtent.strip()
+            if text:
+                narrative_parts.append(text)
+        elif etype == "roll":
+            notation = enotation.strip()
+            if notation:
+                try:
+                    total = roll_dice(notation)
+                    roll_results.append((notation, total))
+                except DiceError:
+                    pass
+
+    if not narrative_parts:
+        # Nothing to check
+        return JSONResponse({"flags": []})
+
+    beat_text = "\n\n".join(narrative_parts)
+
+    try:
+        flags = await check_beat_consistency(
+            game,
+            scene,
+            beat_text,
+            roll_results or None,
+            db=db,
+            game_id=game.id,
+        )
+    except Exception:
+        logger.exception("Consistency check failed for scene %d", scene_id)
+        flags = []
+
+    return JSONResponse({"flags": flags})
 
 
 @router.post(

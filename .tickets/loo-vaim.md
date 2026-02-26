@@ -1,6 +1,6 @@
 ---
 id: loo-vaim
-status: open
+status: closed
 deps: [loo-mznp]
 links: []
 created: 2026-02-26T05:20:21Z

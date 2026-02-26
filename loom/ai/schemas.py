@@ -62,6 +62,21 @@ class ProseExpansion(BaseModel):
     )
 
 
+class ConsistencyCheckResponse(BaseModel):
+    flags: list[str] = Field(
+        max_length=5,
+        description=(
+            "Potential inconsistencies between the beat and the established fiction. "
+            "Each flag is a single, specific, player-facing concern — e.g. "
+            "'You rolled a partial success but this reads like a full success' or "
+            "'The warehouse was established as locked in a prior beat'. "
+            "Return an empty list if the beat is consistent with the fiction. "
+            "Do NOT flag creative choices, tone, or style — only factual contradictions, "
+            "safety-tool violations, and roll-result mismatches."
+        ),
+    )
+
+
 class TensionAdjustmentResponse(BaseModel):
     delta: Literal[-1, 0, 1] = Field(
         description=(
