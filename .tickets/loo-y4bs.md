@@ -1,6 +1,6 @@
 ---
 id: loo-y4bs
-status: open
+status: closed
 deps: [loo-u2nv]
 links: []
 created: 2026-02-25T01:22:44Z

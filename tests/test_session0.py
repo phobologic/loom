@@ -121,11 +121,13 @@ class TestSession0WizardInit:
         game_id = await _create_game(client)
         await client.get(f"/games/{game_id}/session0", follow_redirects=False)
         prompts = await _get_prompts(game_id)
-        assert len(prompts) == 6
+        assert len(prompts) == 7
         assert prompts[0].status == PromptStatus.active
         assert all(p.status == PromptStatus.pending for p in prompts[1:])
-        assert prompts[5].is_safety_tools is True
-        assert all(not p.is_safety_tools for p in prompts[:5])
+        assert prompts[5].is_word_seeds is True
+        assert prompts[6].is_safety_tools is True
+        assert all(not p.is_safety_tools for p in prompts[:6])
+        assert all(not p.is_word_seeds for p in prompts[:5])
 
     async def test_wizard_requires_membership(self, client: AsyncClient) -> None:
         await _login(client, 1)
@@ -340,7 +342,7 @@ class TestSession0OrganizerControls:
         )
         assert response.status_code == 303
         prompts = await _get_prompts(game_id)
-        assert len(prompts) == 7
+        assert len(prompts) == 8
         custom = prompts[-1]
         assert custom.is_default is False
         assert custom.question == "What secret societies exist?"

@@ -518,6 +518,7 @@ class Session0Prompt(TimestampMixin, Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_safety_tools: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_word_seeds: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[PromptStatus] = mapped_column(
         Enum(PromptStatus, native_enum=False), nullable=False, default=PromptStatus.pending
     )

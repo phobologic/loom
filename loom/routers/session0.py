@@ -24,15 +24,20 @@ from loom.models import (
     Session0Prompt,
     Session0Response,
     User,
+    WordSeedTable,
 )
 from loom.notifications import notify_game_members
 from loom.rendering import templates
 from loom.routers.world_document import _load_game_for_voting, create_world_doc_and_proposal
+from loom.word_seeds import ensure_game_seeds
 
 router = APIRouter()
 
 _SAFETY_TOOLS_QUESTION = (
     "Set your lines and veils — hard limits (lines) and fade-to-black topics (veils) for this game."
+)
+_WORD_SEEDS_QUESTION = (
+    "Select which word-seed tables your game will use for the Oracle, and add any custom words."
 )
 
 _DEFAULT_PROMPTS = [
@@ -41,6 +46,7 @@ _DEFAULT_PROMPTS = [
     "Describe the setting: time period, location, and world details.",
     "What is the central tension or mystery that drives the story?",
     "What themes are most important to explore in this game?",
+    _WORD_SEEDS_QUESTION,
     _SAFETY_TOOLS_QUESTION,
 ]
 
@@ -102,6 +108,7 @@ async def _seed_defaults(game: Game, db: AsyncSession) -> None:
                 question=question,
                 is_default=True,
                 is_safety_tools=(question is _SAFETY_TOOLS_QUESTION),
+                is_word_seeds=(question is _WORD_SEEDS_QUESTION),
                 status=status,
             )
         )
@@ -195,6 +202,19 @@ async def session0_prompt(
         )
         safety_tools = list(tools_result.scalars().all())
 
+    # Load word seed tables when viewing the word seeds step
+    word_seed_tables: list[WordSeedTable] = []
+    if prompt.is_word_seeds:
+        await ensure_game_seeds(game_id, db)
+        await db.commit()
+        tables_result = await db.execute(
+            select(WordSeedTable)
+            .where(WordSeedTable.game_id == game_id)
+            .options(selectinload(WordSeedTable.entries))
+            .order_by(WordSeedTable.is_builtin.desc(), WordSeedTable.category)
+        )
+        word_seed_tables = list(tables_result.scalars().all())
+
     return templates.TemplateResponse(
         request,
         "session0_wizard.html",
@@ -208,6 +228,7 @@ async def session0_prompt(
             "current_user": current_user,
             "all_done": _all_done(list(game.session0_prompts)),
             "safety_tools": safety_tools,
+            "word_seed_tables": word_seed_tables,
         },
     )
 
@@ -419,6 +440,41 @@ async def mark_safety_tools_done(
     return RedirectResponse(url=f"/games/{game_id}/session0/{prompt_id}", status_code=303)
 
 
+@router.post(
+    "/games/{game_id}/session0/{prompt_id}/mark-done-word-seeds", response_class=RedirectResponse
+)
+async def mark_word_seeds_done(
+    game_id: int,
+    prompt_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Mark the word seeds prompt complete and advance the wizard (organizer only)."""
+    game = await _load_game_with_session0(game_id, db)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can advance the wizard")
+
+    prompt = next((p for p in game.session0_prompts if p.id == prompt_id), None)
+    if prompt is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    if not prompt.is_word_seeds:
+        raise HTTPException(status_code=400, detail="This route is only for the word seeds step")
+
+    prompt.status = PromptStatus.complete
+    next_prompt = _advance_wizard(list(game.session0_prompts), after_order=prompt.order)
+    await db.commit()
+
+    if next_prompt:
+        return RedirectResponse(url=f"/games/{game_id}/session0/{next_prompt.id}", status_code=303)
+    return RedirectResponse(url=f"/games/{game_id}/session0/{prompt_id}", status_code=303)
+
+
 @router.post("/games/{game_id}/session0/prompts/add", response_class=RedirectResponse)
 async def add_custom_prompt(
     game_id: int,
@@ -565,7 +621,10 @@ async def propose_ready_to_play(
 
     # Minimum requirement: a name and at least one sentence of content
     has_content = bool(game.pitch) or any(
-        r for p in game.session0_prompts if not p.is_safety_tools for r in p.responses
+        r
+        for p in game.session0_prompts
+        if not p.is_safety_tools and not p.is_word_seeds
+        for r in p.responses
     )
     if not has_content:
         raise HTTPException(

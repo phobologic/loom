@@ -53,7 +53,105 @@
     <h2>{{ prompt.question }}</h2>
     <p><strong>Status:</strong> {{ prompt.status.value | capitalize }}</p>
 
-    {% if prompt.is_safety_tools %}
+    {% if prompt.is_word_seeds %}
+
+    <!-- Word Seeds UI — replaces the normal contributions/synthesis flow -->
+    <p>Select which themed word tables are active for Oracle invocations. Any member can toggle tables or add custom words.</p>
+
+    {% set builtin_tables = word_seed_tables | selectattr("is_builtin") | list %}
+    {% set custom_tables = word_seed_tables | rejectattr("is_builtin") | list %}
+
+    <section>
+      <h3>Themed Tables</h3>
+      {% for table in builtin_tables %}
+      <div style="margin-bottom:0.6rem; padding:0.5rem 0.75rem; border:1px solid #ddd; border-radius:4px; background:{% if table.is_active %}#f0fff0{% else %}#fafafa{% endif %}; display:flex; align-items:center; gap:1rem;">
+        <strong style="text-transform:capitalize; min-width:70px;">{{ table.category }}</strong>
+        <span style="color:{% if table.is_active %}#2a7a2a{% else %}#999{% endif %}; font-size:0.85rem;">{{ "Active" if table.is_active else "Inactive" }}</span>
+        {% set action_count = table.entries | selectattr("word_type.value", "equalto", "action") | list | length %}
+        {% set desc_count = table.entries | selectattr("word_type.value", "equalto", "descriptor") | list | length %}
+        <small style="color:#888;">{{ action_count }} action, {{ desc_count }} descriptor</small>
+        <form method="post" action="/games/{{ game.id }}/word-seeds/{{ table.id }}/toggle" style="margin-left:auto;">
+          <button type="submit" style="font-size:0.85rem;">{{ "Deactivate" if table.is_active else "Activate" }}</button>
+        </form>
+      </div>
+      {% endfor %}
+    </section>
+
+    {% set custom_entries = namespace(items=[]) %}
+    {% for t in custom_tables %}
+      {% for e in t.entries %}
+        {% set custom_entries.items = custom_entries.items + [e] %}
+      {% endfor %}
+    {% endfor %}
+
+    <section style="margin-top:1rem;">
+      <h3>Custom Words</h3>
+      {% set custom_actions = custom_entries.items | selectattr("word_type.value", "equalto", "action") | list %}
+      {% set custom_descs = custom_entries.items | selectattr("word_type.value", "equalto", "descriptor") | list %}
+      {% if custom_actions or custom_descs %}
+      <ul>
+        {% for e in custom_actions %}
+        <li>
+          <em>action:</em> {{ e.word }}
+          {% if current_member.role.value == "organizer" %}
+          <form method="post" action="/games/{{ game.id }}/word-seeds/entries/{{ e.id }}/delete" style="display:inline; margin-left:0.4rem;">
+            <button type="submit" style="font-size:0.75rem;">Remove</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+        {% for e in custom_descs %}
+        <li>
+          <em>descriptor:</em> {{ e.word }}
+          {% if current_member.role.value == "organizer" %}
+          <form method="post" action="/games/{{ game.id }}/word-seeds/entries/{{ e.id }}/delete" style="display:inline; margin-left:0.4rem;">
+            <button type="submit" style="font-size:0.75rem;">Remove</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p><em>No custom words added yet.</em></p>
+      {% endif %}
+    </section>
+
+    {% if prompt.status.value == "active" %}
+    <section style="margin-top:1rem;">
+      <h3>Add a custom word</h3>
+      <form method="post" action="/games/{{ game.id }}/word-seeds/entries/add">
+        <select name="word_type" required style="margin-right:0.5rem;">
+          <option value="action">Action word</option>
+          <option value="descriptor">Descriptor word</option>
+        </select>
+        <input type="text" name="word" placeholder="Enter a word..."
+               required style="width:45%; box-sizing:border-box;">
+        <button type="submit" style="margin-left:0.3rem;">Add</button>
+      </form>
+    </section>
+    {% endif %}
+
+    {% if current_member.role.value == "organizer" and prompt.status.value == "active" %}
+    <section style="margin-top:1rem; border-top:1px solid #ddd; padding-top:1rem;">
+      <h3>Organizer controls</h3>
+      <form method="post" action="/games/{{ game.id }}/session0/{{ prompt.id }}/mark-done-word-seeds" style="display:inline;">
+        <button type="submit">Mark word seeds complete</button>
+      </form>
+      <form method="post" action="/games/{{ game.id }}/session0/{{ prompt.id }}/skip" style="display:inline; margin-left:0.5rem;">
+        <button type="submit">Skip this prompt</button>
+      </form>
+    </section>
+    {% endif %}
+
+    {% if prompt.status.value == "skipped" %}
+    <p style="margin-top:1rem;"><em>This prompt was skipped.</em></p>
+    {% endif %}
+
+    {% if prompt.status.value == "complete" %}
+    <p style="margin-top:1rem;"><em>Word seeds have been configured.</em></p>
+    {% endif %}
+
+    {% elif prompt.is_safety_tools %}
 
     <!-- Safety Tools UI — replaces the normal contributions/synthesis flow -->
     <section>

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}{{ game.name }} — Word Seeds — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }} — Word Seeds</h1>
+
+<p>Word seeds are drawn from active tables when invoking the Oracle. Select which
+themed tables are active for your game, and optionally add custom words.</p>
+
+{% set builtin_tables = word_seed_tables | selectattr("is_builtin") | list %}
+{% set custom_tables = word_seed_tables | rejectattr("is_builtin") | list %}
+
+<section>
+  <h2>Themed Tables</h2>
+  <p><em>Toggle tables on or off. Any member can change these.</em></p>
+
+  {% for table in builtin_tables %}
+  <div style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd; border-radius:4px; background:{% if table.is_active %}#f0fff0{% else %}#fafafa{% endif %};">
+    <div style="display:flex; align-items:center; gap:1rem;">
+      <strong style="text-transform:capitalize; min-width:80px;">{{ table.category }}</strong>
+      <span style="color:{% if table.is_active %}#2a7a2a{% else %}#999{% endif %}; font-size:0.85rem;">
+        {{ "Active" if table.is_active else "Inactive" }}
+      </span>
+      {% set action_count = table.entries | selectattr("word_type.value", "equalto", "action") | list | length %}
+      {% set desc_count = table.entries | selectattr("word_type.value", "equalto", "descriptor") | list | length %}
+      <small style="color:#888;">{{ action_count }} action words, {{ desc_count }} descriptor words</small>
+      <form method="post" action="/games/{{ game.id }}/word-seeds/{{ table.id }}/toggle" style="margin-left:auto;">
+        <button type="submit">{{ "Deactivate" if table.is_active else "Activate" }}</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+<section style="margin-top:2rem;">
+  <h2>Custom Words</h2>
+  <p><em>Custom words are always active and supplement the themed tables. Any member can add words; the organizer can remove them.</em></p>
+
+  {% set custom_entries = [] %}
+  {% for t in custom_tables %}
+    {% for e in t.entries %}
+      {% set _ = custom_entries.append(e) %}
+    {% endfor %}
+  {% endfor %}
+
+  {% set custom_actions = custom_entries | selectattr("word_type.value", "equalto", "action") | list %}
+  {% set custom_descriptors = custom_entries | selectattr("word_type.value", "equalto", "descriptor") | list %}
+
+  <div style="display:flex; gap:2rem; flex-wrap:wrap;">
+    <div>
+      <h3>Action Words</h3>
+      {% if custom_actions %}
+      <ul>
+        {% for e in custom_actions %}
+        <li>
+          {{ e.word }}
+          {% if current_member.role.value == "organizer" %}
+          <form method="post" action="/games/{{ game.id }}/word-seeds/entries/{{ e.id }}/delete"
+                style="display:inline; margin-left:0.4rem;">
+            <button type="submit" style="font-size:0.75rem;">Remove</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p><em>No custom action words yet.</em></p>
+      {% endif %}
+    </div>
+    <div>
+      <h3>Descriptor Words</h3>
+      {% if custom_descriptors %}
+      <ul>
+        {% for e in custom_descriptors %}
+        <li>
+          {{ e.word }}
+          {% if current_member.role.value == "organizer" %}
+          <form method="post" action="/games/{{ game.id }}/word-seeds/entries/{{ e.id }}/delete"
+                style="display:inline; margin-left:0.4rem;">
+            <button type="submit" style="font-size:0.75rem;">Remove</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p><em>No custom descriptor words yet.</em></p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="margin-top:1rem;">
+    <h3>Add a custom word</h3>
+    <form method="post" action="/games/{{ game.id }}/word-seeds/entries/add">
+      <select name="word_type" required style="margin-right:0.5rem;">
+        <option value="action">Action word</option>
+        <option value="descriptor">Descriptor word</option>
+      </select>
+      <input type="text" name="word" placeholder="Enter a word..."
+             required style="width:40%; box-sizing:border-box;">
+      <button type="submit" style="margin-left:0.3rem;">Add</button>
+    </form>
+  </div>
+</section>
+
+<p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}">&larr; Game Dashboard</a></p>
+{% endblock %}
