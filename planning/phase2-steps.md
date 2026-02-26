@@ -38,6 +38,8 @@ When a scene completes, the AI evaluates what happened and proposes whether tens
 
 Players each vote their own preferred delta (+1, 0, -1) after reading the AI's reasoning — not just accept/reject. Plurality wins; ties and abstentions fall back to the AI's suggestion. Proposals expire after the game's silence timer window; the AI suggestion is applied automatically if no votes are cast. Single-player games skip the vote and auto-apply. The adjustment is clamped to 1-9 and carries forward to the next scene via existing logic.
 
+**Design refinement (2026-02-26):** `scene.tension` is immutable — it records the tension value the scene ran at as a historical fact. A new nullable field `tension_carry_forward` on Scene holds the voted adjustment outcome. The next scene proposal reads `tension_carry_forward ?? tension` from the previous scene as its starting tension. Display shows "Tension: 7 → 8 after scene" when carry-forward differs. Requires an Alembic migration. If a tension vote is still open when a new scene is proposed, it is auto-resolved using cast votes (or the AI suggestion if none). Implemented via tickets loo-eolv and loo-3x90.
+
 **Requirements:** REQ-TENSION-002
 
 ---

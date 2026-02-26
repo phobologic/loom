@@ -40,7 +40,7 @@ Game (settings, world document, members, active word seed tables)
 
 **Canon** - The accepted, official state of the fiction. A minor beat becomes canon the instant it's submitted. A major beat becomes canon when the group approves it (or the silence timer expires without objection).
 
-**Challenge** - A mechanism for any player to flag a canon beat as inconsistent with the established fiction. The original author responds by accepting the concern and revising, or dismissing it. Other players can add comments to discuss the concern. The author's decision is final. Challenges are for genuine fictional inconsistencies, not creative disagreements.
+**Challenge** - A mechanism for any player to flag a canon beat as inconsistent with the established fiction. The original author responds by accepting the concern and revising, or dismissing it. Other players can add comments to discuss the concern. The author's decision is final. Challenges are for genuine fictional inconsistencies, not creative disagreements. After resolution (accept+revise or dismiss), a collapsed challenge history record remains visible in the beat timeline showing: who challenged, the reason, the outcome, and any discussion comments. This preserves narrative accountability without cluttering the main view.
 
 **Characters Present** - A dynamic, point-in-time list of which characters are currently in the active scene. Updated automatically as characters enter and leave. Used by the AI to ensure oracle suggestions and prose only reference characters who are actually there.
 
@@ -72,7 +72,7 @@ Game (settings, world document, members, active word seed tables)
 
 **Spotlight** - An optional indicator a player can set on their beat to signal that they're waiting for a specific character to respond. The spotlighted player gets a notification. Other players can still post OOC or interact with oracle results, but the narrative focus is held.
 
-**Tension** - A per-scene value (1-9, starting at 5) that tracks narrative intensity and pacing. Higher tension tips Fortune Roll probabilities toward "Yes" and exceptional results, and biases the oracle toward more dramatic suggestions. Lower tension favors subtler, tension-building outcomes. Adjusted at scene completion based on AI evaluation of what happened, with group confirmation.
+**Tension** - A per-scene value (1-9, starting at 5) that tracks narrative intensity and pacing. Higher tension tips Fortune Roll probabilities toward "Yes" and exceptional results, and biases the oracle toward more dramatic suggestions. Lower tension favors subtler, tension-building outcomes. Adjusted at scene completion based on AI evaluation of what happened, with group confirmation. `scene.tension` is immutable after scene creation — it records the tension the scene ran at. A separate `tension_carry_forward` field stores the post-scene voted adjustment; the next scene inherits `tension_carry_forward ?? tension` from its predecessor as its starting tension.
 
 **Word Seeds** - A pair of randomly generated words (one action/verb, one descriptor/subject) used as creative constraints for the interpretive oracle. Drawn from genre-appropriate tables selected during Session 0. Displayed to all players alongside oracle results so everyone can see what inspired the suggestions.
 

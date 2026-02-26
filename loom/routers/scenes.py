@@ -942,7 +942,7 @@ async def submit_beat(
                 db,
                 user_id=spotlight_char.owner_id,
                 game_id=game.id,
-                notification_type=NotificationType.spotlight,
+                ntype=NotificationType.spotlight,
                 message=f"Your character {spotlight_char.name!r} has been spotlighted — someone is waiting for your response",
                 link=scene_link,
             )

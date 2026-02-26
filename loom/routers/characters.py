@@ -11,7 +11,7 @@ from starlette.requests import Request
 
 from loom.database import get_db
 from loom.dependencies import get_current_user
-from loom.models import Character, Game, GameMember, GameStatus, MemberRole, User
+from loom.models import Character, Game, GameMember, GameStatus, User
 from loom.rendering import templates
 
 router = APIRouter()
@@ -157,9 +157,7 @@ async def edit_character_page(
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
 
-    is_owner = character.owner_id == current_user.id
-    is_organizer = current_member.role == MemberRole.organizer
-    if not is_owner and not is_organizer:
+    if character.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only edit your own character")
 
     my_char = _my_character(game, current_user.id)
@@ -205,9 +203,7 @@ async def update_character(
     if character is None:
         raise HTTPException(status_code=404, detail="Character not found")
 
-    is_owner = character.owner_id == current_user.id
-    is_organizer = current_member.role == MemberRole.organizer
-    if not is_owner and not is_organizer:
+    if character.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only edit your own character")
 
     name = name.strip()

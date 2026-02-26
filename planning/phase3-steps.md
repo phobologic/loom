@@ -128,6 +128,21 @@ All random events are presented as suggestions to the group, not forced into the
 
 ---
 
+### Step 53: Tension Voting Mode Setting
+
+Allow games to choose between two modes for tension adjustment on scene completion:
+
+- `'vote'` (default): current behavior — AI proposes a delta, players each vote (+1/0/-1), plurality wins.
+- `'ai_auto'`: AI suggestion is applied immediately to `tension_carry_forward` on scene completion; no vote UI shown. Intended for groups who want frictionless flow and trust the oracle to manage tension.
+
+Configurable by the organizer in game settings. When `ai_auto` is active, the tension adjustment section is suppressed from the scene detail page. The smoke manifest notes workflow 18 only applies when `tension_voting_mode='vote'`.
+
+**Implementation touchpoints:** `models.py` (add `tension_voting_mode` column to Game), Alembic migration, `scenes.py` (branch on mode at scene completion), `scene_detail.html` (suppress vote UI), `game_settings.html` (add organizer form field), `smoke-manifest.md` (annotate workflow 18).
+
+**Requirements:** REQ-TENSION-002 (extension)
+
+---
+
 ## Requirements Coverage Check
 
 All requirements from the Loom Requirements Document are covered across the three phase plans:

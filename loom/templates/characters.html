@@ -54,7 +54,7 @@
         <p style="margin:0.25rem 0 0; color:#555;"><em>Notes: {{ char.notes }}</em></p>
       {% endif %}
       {% if game.status.value != "archived" %}
-        {% if char.owner_id == current_user.id or current_member.role.value == "organizer" %}
+        {% if char.owner_id == current_user.id %}
         <a href="/games/{{ game.id }}/characters/{{ char.id }}/edit" style="font-size:0.9em;">Edit</a>
         {% endif %}
       {% endif %}

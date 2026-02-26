@@ -25,7 +25,7 @@
       <strong>{{ act.title if act.title else "Act " ~ loop.index }}</strong>
       <em>({{ act.status.value | capitalize }})</em>
       — {{ act.guiding_question }}
-      {% if act.status.value == "active" %}
+      {% if act.status.value in ("active", "complete") %}
       — <a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes">Scenes</a>
       {% endif %}
     </li>
