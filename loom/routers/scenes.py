@@ -75,6 +75,7 @@ async def _load_scene_for_view(scene_id: int, db: AsyncSession) -> Scene | None:
             .selectinload(VoteProposal.proposed_by),
             selectinload(Scene.characters_present),
             selectinload(Scene.beats).selectinload(Beat.author),
+            selectinload(Scene.beats).selectinload(Beat.challenged_by),
             selectinload(Scene.beats).selectinload(Beat.events),
             selectinload(Scene.beats)
             .selectinload(Beat.events)
@@ -856,6 +857,69 @@ async def submit_beat(
         url=scene_link,
         status_code=303,
     )
+
+
+@router.post("/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge")
+async def challenge_beat(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    beat_id: int,
+    reason: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """File a challenge against a canon beat."""
+    scene = await _load_scene_for_view(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="Not a member of this game")
+
+    beat = next((b for b in scene.beats if b.id == beat_id), None)
+    if beat is None:
+        raise HTTPException(status_code=404, detail="Beat not found")
+
+    if beat.status != BeatStatus.canon:
+        raise HTTPException(status_code=400, detail="Only canon beats can be challenged")
+
+    reason = reason.strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="A reason is required to file a challenge")
+
+    beat.status = BeatStatus.challenged
+    beat.challenge_reason = reason
+    beat.challenged_by_id = current_user.id
+
+    scene_link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
+
+    # Personal notification to the beat's original author
+    if beat.author_id is not None and beat.author_id != current_user.id:
+        await create_notification(
+            db,
+            user_id=beat.author_id,
+            game_id=game_id,
+            ntype=NotificationType.beat_challenged,
+            message=f"{current_user.display_name} challenged your beat: {reason[:80]}",
+            link=scene_link,
+        )
+
+    # Broadcast to all other members (excluding challenger and author)
+    for member in game.members:
+        if member.user_id not in {current_user.id, beat.author_id}:
+            await create_notification(
+                db,
+                user_id=member.user_id,
+                game_id=game_id,
+                ntype=NotificationType.beat_challenged,
+                message=f"{current_user.display_name} challenged a beat: {reason[:60]}",
+                link=scene_link,
+            )
+
+    await db.commit()
+    return RedirectResponse(url=scene_link, status_code=303)
 
 
 @router.get("/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats", response_class=HTMLResponse)

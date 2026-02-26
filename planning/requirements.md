@@ -564,7 +564,8 @@ Game (settings, world document, members, active word seed tables)
 - Any player can challenge any canon beat at any time.
 - The challenger must provide a reason (e.g., "This contradicts the established magic system" or "A partial success shouldn't result in this outcome").
 - The challenged beat is marked as "challenged" and visually flagged in the timeline.
-- The original author is notified of the challenge.
+- The original author is notified of the challenge with a personal notification.
+- All other game members receive a broadcast notification so everyone is aware a challenge is active.
 
 ### REQ-CHALLENGE-002: Challenge Resolution
 *Requirement:* When a beat has been challenged, Loom shall facilitate resolution.

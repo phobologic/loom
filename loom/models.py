@@ -241,7 +241,9 @@ class User(TimestampMixin, Base):
         back_populates="owner",
         foreign_keys="Character.owner_id",
     )
-    beats: Mapped[list[Beat]] = relationship(back_populates="author")
+    beats: Mapped[list[Beat]] = relationship(
+        back_populates="author", foreign_keys="[Beat.author_id]"
+    )
     notifications: Mapped[list[Notification]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
@@ -418,9 +420,16 @@ class Beat(TimestampMixin, Base):
         Enum(BeatStatus, native_enum=False), nullable=False, default=BeatStatus.proposed
     )
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    challenge_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    challenged_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     scene: Mapped[Scene] = relationship(back_populates="beats")
-    author: Mapped[User | None] = relationship(back_populates="beats")
+    author: Mapped[User | None] = relationship(
+        back_populates="beats", foreign_keys="[Beat.author_id]"
+    )
+    challenged_by: Mapped[User | None] = relationship(foreign_keys="[Beat.challenged_by_id]")
     events: Mapped[list[Event]] = relationship(
         back_populates="beat",
         cascade="all, delete-orphan",

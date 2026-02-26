@@ -12,6 +12,12 @@
       <span style="color:#c04000; font-weight:bold;">[Challenged]</span>
       {% endif %}
     </div>
+    {% if beat.status.value == "challenged" and beat.challenge_reason %}
+    <p style="margin:0.2rem 0 0.3rem; font-size:0.82rem; color:#c04000;">
+      Challenged{% if beat.challenged_by %} by <strong>{{ beat.challenged_by.display_name }}</strong>{% endif %}:
+      <em>{{ beat.challenge_reason }}</em>
+    </p>
+    {% endif %}
     {% for event in beat.events %}
     <div style="margin-top:0.4rem; padding:0.3rem 0.5rem; border-left:3px solid {% if event.type.value == 'ooc' %}#999{% else %}#4a7fc1{% endif %}; background:{% if event.type.value == 'ooc' %}#f5f5f5{% else %}#f8fbff{% endif %};">
       <span style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:0.05em;">{{ event.type.value | replace("_", " ") }}</span>
@@ -248,6 +254,21 @@
     {% endfor %}
     {% if not beat.events %}
     <p style="margin:0.25rem 0 0; color:#aaa; font-style:italic; font-size:0.85rem;">(no events)</p>
+    {% endif %}
+
+    {# Challenge form for canon beats #}
+    {% if beat.status.value == 'canon' %}
+    <details style="margin-top:0.6rem;">
+      <summary style="font-size:0.82rem; color:#888; cursor:pointer;">Challenge this beat</summary>
+      <form method="post"
+            action="/games/{{ game.id }}/acts/{{ scene.act_id }}/scenes/{{ scene.id }}/beats/{{ beat.id }}/challenge"
+            style="margin-top:0.4rem;">
+        <textarea name="reason" rows="2" required
+          style="width:100%; max-width:32rem; font-size:0.85rem; box-sizing:border-box;"
+          placeholder="Describe the fictional inconsistency (required)"></textarea>
+        <button type="submit" style="margin-top:0.3rem; font-size:0.82rem;">File challenge</button>
+      </form>
+    </details>
     {% endif %}
 
     {# Voting panel for major beats pending approval #}

@@ -52,7 +52,7 @@ The current tension value is included in the oracle's AI prompt context. High te
 
 ### Step 30: Challenge System - Filing a Challenge
 
-Any player can challenge a canon beat. They provide a reason (fictional inconsistency, not creative disagreement). The beat is marked "challenged" and visually flagged in the timeline. The original author is notified.
+Any player can challenge a canon beat. They provide a reason (fictional inconsistency, not creative disagreement). The beat is marked "challenged" and visually flagged in the timeline. The original author receives a personal notification; all other game members receive a broadcast notification so everyone knows a challenge is active.
 
 **Requirements:** REQ-CHALLENGE-001
 

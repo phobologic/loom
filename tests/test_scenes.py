@@ -21,6 +21,8 @@ from loom.models import (
     GameMember,
     GameStatus,
     MemberRole,
+    Notification,
+    NotificationType,
     ProposalStatus,
     ProposalType,
     Scene,
@@ -1398,3 +1400,172 @@ class TestSceneCompletion:
         r = await client.get(f"/games/{game_id}/acts/{act_id}/scenes", follow_redirects=False)
         assert r.status_code == 200
         assert f"/scenes/{scene_id}".encode() in r.content
+
+
+# ---------------------------------------------------------------------------
+# Challenge a beat
+# ---------------------------------------------------------------------------
+
+
+async def _get_notifications(user_id: int) -> list[Notification]:
+    async with _test_session_factory() as db:
+        result = await db.execute(select(Notification).where(Notification.user_id == user_id))
+        return list(result.scalars().all())
+
+
+class TestChallengeBeat:
+    async def test_member_can_challenge_canon_beat(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        # User 1 submits a minor (auto-canon) beat
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("The hero strides in."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert beats[0].status == BeatStatus.canon
+
+        # User 2 challenges it
+        await _login(client, 2)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beats[0].id}/challenge",
+            data={"reason": "This contradicts established lore."},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+        beats = await _get_beats(scene_id)
+        assert beats[0].status == BeatStatus.challenged
+        assert beats[0].challenge_reason == "This contradicts established lore."
+        assert beats[0].challenged_by_id == 2
+
+    async def test_author_notified_on_challenge(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("A moment of silence."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _login(client, 2)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge",
+            data={"reason": "Inconsistent with act 1."},
+            follow_redirects=False,
+        )
+
+        notifications = await _get_notifications(user_id=1)
+        assert any(n.notification_type == NotificationType.beat_challenged for n in notifications)
+        assert any("challenged your beat" in n.message for n in notifications)
+
+    async def test_non_member_cannot_challenge(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Something happens."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+
+        await _login(client, 2)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beats[0].id}/challenge",
+            data={"reason": "Does not make sense."},
+            follow_redirects=False,
+        )
+        assert r.status_code == 403
+
+    async def test_cannot_challenge_non_canon_beat(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2, 3])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        # Submit a major beat (proposed, not canon)
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={
+                "event_type": "narrative",
+                "event_content": "Big event.",
+                "beat_significance": "major",
+            },
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        assert beats[0].status == BeatStatus.proposed
+
+        await _login(client, 2)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beats[0].id}/challenge",
+            data={"reason": "This is not how magic works."},
+            follow_redirects=False,
+        )
+        assert r.status_code == 400
+
+    async def test_empty_reason_rejected(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Something happens."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+
+        await _login(client, 2)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beats[0].id}/challenge",
+            data={"reason": "   "},
+            follow_redirects=False,
+        )
+        assert r.status_code == 400
+
+    async def test_author_challenging_own_beat_no_self_notification(
+        self, client: AsyncClient
+    ) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("I made a mistake."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beats[0].id}/challenge",
+            data={"reason": "I contradicted earlier lore."},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+        # Beat transitions to challenged
+        beats = await _get_beats(scene_id)
+        assert beats[0].status == BeatStatus.challenged
+
+        # No self-notification
+        notifications = await _get_notifications(user_id=1)
+        assert not any(
+            n.notification_type == NotificationType.beat_challenged and "your beat" in n.message
+            for n in notifications
+        )
