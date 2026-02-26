@@ -25,6 +25,13 @@
     <span style="font-size:1.2rem; font-weight:bold; color:{% if scene.tension >= 7 %}#c04000{% elif scene.tension >= 4 %}#c07800{% else %}#2a7a2a{% endif %};">
       {{ scene.tension }}
     </span>
+    {% if scene.tension_carry_forward is not none and scene.tension_carry_forward != scene.tension %}
+      &rarr;
+      <span style="font-size:1.2rem; font-weight:bold; color:{% if scene.tension_carry_forward >= 7 %}#c04000{% elif scene.tension_carry_forward >= 4 %}#c07800{% else %}#2a7a2a{% endif %};">
+        {{ scene.tension_carry_forward }}
+      </span>
+      <em style="font-size:0.85em; color:#666;">after scene</em>
+    {% endif %}
     / 9
     &nbsp;&mdash;&nbsp;
     <strong>Status:</strong> {{ scene.status.value | capitalize }}

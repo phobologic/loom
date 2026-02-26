@@ -371,7 +371,13 @@ async def scenes_view(
     threshold = approval_threshold(total_players)
 
     non_proposed = [s for s in act.scenes if s.status != SceneStatus.proposed]
-    default_tension = max(non_proposed, key=lambda s: s.order).tension if non_proposed else 5
+    if non_proposed:
+        prev = max(non_proposed, key=lambda s: s.order)
+        default_tension = (
+            prev.tension_carry_forward if prev.tension_carry_forward is not None else prev.tension
+        )
+    else:
+        default_tension = 5
 
     act_complete_proposal = next(
         (
@@ -691,7 +697,7 @@ async def scene_detail(
         delta = resolve_tension_vote(
             yes_count, suggest_count, no_count, tension_adj_proposal.tension_delta or 0
         )
-        scene.tension = max(1, min(9, scene.tension + delta))
+        scene.tension_carry_forward = max(1, min(9, scene.tension + delta))
         tension_adj_proposal.status = ProposalStatus.approved
         await db.commit()
         tension_adj_proposal = None  # resolved — hide from template

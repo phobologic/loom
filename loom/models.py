@@ -389,6 +389,7 @@ class Scene(TimestampMixin, Base):
         Enum(SceneStatus, native_enum=False), nullable=False, default=SceneStatus.proposed
     )
     tension: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    tension_carry_forward: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     act: Mapped[Act] = relationship(back_populates="scenes")

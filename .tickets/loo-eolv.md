@@ -1,6 +1,6 @@
 ---
 id: loo-eolv
-status: open
+status: closed
 deps: [loo-1u6r]
 links: []
 created: 2026-02-26T19:51:54Z

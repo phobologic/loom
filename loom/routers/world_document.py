@@ -105,10 +105,11 @@ async def _load_game_for_voting(game_id: int, db: AsyncSession) -> Game | None:
 
 
 def _resolve_tension_proposal(proposal: VoteProposal) -> None:
-    """Apply plurality vote result to scene.tension and mark proposal approved.
+    """Apply plurality vote result to scene.tension_carry_forward and mark proposal approved.
 
     VoteChoice mapping for tension: yes → +1, suggest_modification → 0, no → -1.
     AI suggestion is used as tiebreaker and default when no votes were cast.
+    scene.tension is left untouched — it is the historical record of what tension the scene ran at.
     """
     if proposal.scene is None:
         return
@@ -116,7 +117,7 @@ def _resolve_tension_proposal(proposal: VoteProposal) -> None:
     suggest_count = sum(1 for v in proposal.votes if v.choice == VoteChoice.suggest_modification)
     no_count = sum(1 for v in proposal.votes if v.choice == VoteChoice.no)
     delta = resolve_tension_vote(yes_count, suggest_count, no_count, proposal.tension_delta or 0)
-    proposal.scene.tension = max(1, min(9, proposal.scene.tension + delta))
+    proposal.scene.tension_carry_forward = max(1, min(9, proposal.scene.tension + delta))
     proposal.status = ProposalStatus.approved
 
 
@@ -183,7 +184,7 @@ async def _create_tension_adjustment_proposal(
 
     if total_players == 1:
         # Single-player: apply immediately, no vote
-        scene.tension = max(1, min(9, scene.tension + delta))
+        scene.tension_carry_forward = max(1, min(9, scene.tension + delta))
         return
 
     tension_proposal = VoteProposal(
@@ -409,7 +410,16 @@ async def cast_vote(
     total_players = len(game.members)
     yes_count = sum(1 for v in proposal.votes if v.choice == VoteChoice.yes)
 
-    if is_approved(yes_count, total_players):
+    # Tension adjustment: resolve by plurality once all players have voted.
+    # Must be checked before is_approved() because "+1 Escalate" maps to VoteChoice.yes,
+    # which would cause is_approved() to mark the proposal approved first and skip this block.
+    if (
+        proposal.proposal_type == ProposalType.tension_adjustment
+        and proposal.status == ProposalStatus.open
+        and len(proposal.votes) >= total_players
+    ):
+        _resolve_tension_proposal(proposal)
+    elif is_approved(yes_count, total_players):
         proposal.status = ProposalStatus.approved
         if proposal.proposal_type in (ProposalType.world_doc_approval, ProposalType.ready_to_play):
             game.status = GameStatus.active
@@ -429,14 +439,6 @@ async def cast_vote(
             for scene in proposal.act.scenes:
                 if scene.status == SceneStatus.active:
                     scene.status = SceneStatus.complete
-
-    # Tension adjustment: resolve by plurality once all players have voted
-    if (
-        proposal.proposal_type == ProposalType.tension_adjustment
-        and proposal.status == ProposalStatus.open
-        and len(proposal.votes) >= total_players
-    ):
-        _resolve_tension_proposal(proposal)
 
     await db.commit()
 
