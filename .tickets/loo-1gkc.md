@@ -1,6 +1,6 @@
 ---
 id: loo-1gkc
-status: in_progress
+status: closed
 deps: [loo-t6ld]
 links: []
 created: 2026-02-25T01:22:44Z
