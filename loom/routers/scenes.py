@@ -379,6 +379,18 @@ async def scenes_view(
     else:
         default_tension = 5
 
+    open_tension_vote = next(
+        (
+            p
+            for p in game.proposals
+            if p.status == ProposalStatus.open
+            and p.proposal_type == ProposalType.tension_adjustment
+            and p.scene is not None
+            and p.scene.act_id == act.id
+        ),
+        None,
+    )
+
     act_complete_proposal = next(
         (
             p
@@ -419,6 +431,7 @@ async def scenes_view(
             "total_players": total_players,
             "threshold": threshold,
             "default_tension": default_tension,
+            "open_tension_vote": open_tension_vote,
             "act_complete_proposal": act_complete_proposal,
             "ac_my_vote": ac_my_vote,
             "ac_yes_count": ac_yes_count,
@@ -474,6 +487,23 @@ async def propose_scene(
     )
     if has_open:
         raise HTTPException(status_code=409, detail="A scene proposal is already pending")
+
+    # Auto-resolve any open tension_adjustment proposal for a scene in this act.
+    # This handles the case where a player proposes a new scene before everyone has voted.
+    # Uses the current vote state; falls back to the AI recommendation if no votes were cast.
+    for p in game.proposals:
+        if (
+            p.status == ProposalStatus.open
+            and p.proposal_type == ProposalType.tension_adjustment
+            and p.scene is not None
+            and p.scene.act_id == act.id
+        ):
+            yes = sum(1 for v in p.votes if v.choice == VoteChoice.yes)
+            hold = sum(1 for v in p.votes if v.choice == VoteChoice.suggest_modification)
+            no = sum(1 for v in p.votes if v.choice == VoteChoice.no)
+            delta = resolve_tension_vote(yes, hold, no, p.tension_delta or 0)
+            p.scene.tension_carry_forward = max(1, min(9, p.scene.tension + delta))
+            p.status = ProposalStatus.approved
 
     game_char_ids = {c.id for c in game.characters}
     invalid = set(character_ids) - game_char_ids

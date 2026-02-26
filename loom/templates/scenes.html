@@ -187,6 +187,14 @@
       <p style="color:#888;"><em>No characters exist yet. Create characters before proposing a scene.</em></p>
       {% endif %}
     </div>
+    {% if open_tension_vote %}
+    <p style="margin-top:0.75rem; padding:0.5rem 0.75rem; background:#fff8e1; border-left:3px solid #f0a500; font-size:0.9em;">
+      <strong>Note:</strong> There is an unresolved tension vote for
+      <em>Scene {{ open_tension_vote.scene.order }}</em>.
+      Proposing a new scene will auto-resolve it using the current votes
+      (or the AI recommendation if no votes have been cast).
+    </p>
+    {% endif %}
     <button type="submit" style="margin-top:0.75rem;">Propose Scene</button>
   </form>
 </section>

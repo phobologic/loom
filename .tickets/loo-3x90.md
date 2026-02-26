@@ -1,6 +1,6 @@
 ---
 id: loo-3x90
-status: open
+status: closed
 deps: [loo-1u6r, loo-eolv]
 links: []
 created: 2026-02-26T20:27:54Z
