@@ -16,6 +16,7 @@ dependencies = [
     "anthropic",
     "itsdangerous>=2.2.0",
     "authlib>=1.6.8",
+    "instructor>=1.14.5",
 ]
 
 [project.optional-dependencies]
