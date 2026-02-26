@@ -12,8 +12,9 @@ wheels/
 .env.*
 !.env.example
 
-# Local tooling
-.claude/
+# Local tooling — ignore contents but track .claude/commands/
+.claude/*
+!.claude/commands/
 .code-review/
 
 # Database
