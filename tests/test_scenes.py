@@ -1230,3 +1230,171 @@ class TestBeatSignificanceClassification:
         assert b"Minor" in response.content
         assert b"Major" in response.content
         assert b"AI suggests" in response.content
+
+
+# ---------------------------------------------------------------------------
+# Scene completion
+# ---------------------------------------------------------------------------
+
+
+async def _get_scene(scene_id: int) -> Scene:
+    async with _test_session_factory() as db:
+        result = await db.execute(select(Scene).where(Scene.id == scene_id))
+        return result.scalar_one()
+
+
+class TestSceneCompletion:
+    async def test_single_player_auto_approves(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+        scene = await _get_scene(scene_id)
+        assert scene.status == SceneStatus.complete
+
+    async def test_single_player_proposal_approved(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        proposals = await _get_proposals(game_id)
+        completion_proposals = [
+            p for p in proposals if p.proposal_type == ProposalType.scene_complete
+        ]
+        assert len(completion_proposals) == 1
+        assert completion_proposals[0].status == ProposalStatus.approved
+
+    async def test_multi_player_stays_pending(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        await _login(client, 1)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        scene = await _get_scene(scene_id)
+        assert scene.status == SceneStatus.active
+
+        proposals = await _get_proposals(game_id)
+        completion = next(p for p in proposals if p.proposal_type == ProposalType.scene_complete)
+        assert completion.status == ProposalStatus.open
+
+    async def test_multi_player_vote_approves(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        await _login(client, 1)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        proposals = await _get_proposals(game_id)
+        proposal = next(p for p in proposals if p.proposal_type == ProposalType.scene_complete)
+
+        await _login(client, 2)
+        await client.post(
+            f"/games/{game_id}/proposals/{proposal.id}/vote",
+            data={"choice": "yes"},
+            follow_redirects=False,
+        )
+        scene = await _get_scene(scene_id)
+        assert scene.status == SceneStatus.complete
+
+    async def test_duplicate_proposal_rejected(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        await _login(client, 1)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        assert r.status_code == 409
+
+    async def test_cannot_complete_non_active_scene(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        async with _test_session_factory() as db:
+            char = Character(game_id=game_id, owner_id=1, name="Hero")
+            db.add(char)
+            await db.flush()
+            scene = Scene(
+                act_id=act_id,
+                guiding_question="Already done?",
+                tension=5,
+                status=SceneStatus.complete,
+                order=1,
+            )
+            db.add(scene)
+            await db.commit()
+            scene_id = scene.id
+
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        assert r.status_code == 403
+
+    async def test_beat_submission_blocked_for_complete_scene(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        # Complete the scene (auto-approved for single player)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data={"event_type": "narrative", "event_content": "A beat"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 403
+
+    async def test_page_shows_complete_status(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert r.status_code == 200
+        assert b"Complete" in r.content
+
+    async def test_scenes_page_links_completed_scene(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        r = await client.get(f"/games/{game_id}/acts/{act_id}/scenes", follow_redirects=False)
+        assert r.status_code == 200
+        assert f"/scenes/{scene_id}".encode() in r.content

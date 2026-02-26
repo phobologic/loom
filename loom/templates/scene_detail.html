@@ -59,6 +59,53 @@
 </section>
 
 <section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2>Scene Completion</h2>
+  {% if scene_complete_proposal %}
+  <p><strong>Proposed by:</strong> {{ scene_complete_proposal.proposed_by.display_name if scene_complete_proposal.proposed_by else "Unknown" }}</p>
+  <p>
+    <strong>Votes:</strong> {{ sc_yes_count }} yes &middot; {{ sc_no_count }} no &middot; {{ sc_suggest_count }} suggestion(s)
+    &nbsp;({{ total_players }} player{{ "s" if total_players != 1 else "" }} total,
+    threshold: more than {{ threshold | int if threshold == (threshold | int) else threshold }})
+  </p>
+  {% if scene_complete_proposal.votes %}
+  <ul>
+    {% for v in scene_complete_proposal.votes %}
+    <li>
+      <strong>{{ v.voter.display_name if v.voter else "Anonymous" }}:</strong>
+      {{ v.choice.value | replace("_", " ") | capitalize }}
+      {% if v.suggestion %}<br><em style="color:#555;">Suggestion: {{ v.suggestion }}</em>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if not sc_my_vote %}
+  <form method="post" action="/games/{{ game.id }}/proposals/{{ scene_complete_proposal.id }}/vote" style="margin-top:0.75rem;">
+    <fieldset>
+      <legend><strong>Cast your vote</strong></legend>
+      <label style="display:block; margin:0.4rem 0;"><input type="radio" name="choice" value="yes" required> Yes, complete the scene</label>
+      <label style="display:block; margin:0.4rem 0;"><input type="radio" name="choice" value="no"> No, keep it open</label>
+      <label style="display:block; margin:0.4rem 0;"><input type="radio" name="choice" value="suggest_modification"> Suggest modification</label>
+      <div style="margin-top:0.5rem;">
+        <label for="sc_suggestion">Suggestion (optional):</label><br>
+        <textarea id="sc_suggestion" name="suggestion" rows="2" style="width:100%; box-sizing:border-box;"></textarea>
+      </div>
+      <button type="submit" style="margin-top:0.5rem;">Submit vote</button>
+    </fieldset>
+  </form>
+  {% else %}
+  <p>Your vote: <strong>{{ sc_my_vote.choice.value | replace("_", " ") | capitalize }}</strong>
+  {% if sc_my_vote.suggestion %} &mdash; <em>{{ sc_my_vote.suggestion }}</em>{% endif %}</p>
+  {% endif %}
+  {% elif scene.status.value == "active" %}
+  <form method="post" action="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/complete">
+    <button type="submit">Propose Scene Completion</button>
+  </form>
+  {% else %}
+  <p style="color:#888; font-style:italic;">This scene is complete.</p>
+  {% endif %}
+</section>
+
+<section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
   <h2>Submit a Beat</h2>
   {% if scene.status.value == "active" %}
   <form method="post" action="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/beats">

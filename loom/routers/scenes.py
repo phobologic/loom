@@ -288,8 +288,10 @@ async def scenes_view(
     if act is None:
         raise HTTPException(status_code=404, detail="Act not found")
 
-    if act.status != ActStatus.active:
-        raise HTTPException(status_code=403, detail="Scenes can only be viewed for an active act")
+    if act.status not in (ActStatus.active, ActStatus.complete):
+        raise HTTPException(
+            status_code=403, detail="Scenes can only be viewed for an active or complete act"
+        )
 
     scenes = sorted(act.scenes, key=lambda s: s.order)
 
@@ -318,6 +320,28 @@ async def scenes_view(
     non_proposed = [s for s in act.scenes if s.status != SceneStatus.proposed]
     default_tension = max(non_proposed, key=lambda s: s.order).tension if non_proposed else 5
 
+    act_complete_proposal = next(
+        (
+            p
+            for p in game.proposals
+            if p.status == ProposalStatus.open
+            and p.proposal_type == ProposalType.act_complete
+            and p.act_id == act.id
+        ),
+        None,
+    )
+    ac_my_vote = None
+    ac_yes_count = ac_no_count = ac_suggest_count = 0
+    if act_complete_proposal is not None:
+        ac_my_vote = next(
+            (v for v in act_complete_proposal.votes if v.voter_id == current_user.id), None
+        )
+        ac_yes_count = sum(1 for v in act_complete_proposal.votes if v.choice == VoteChoice.yes)
+        ac_no_count = sum(1 for v in act_complete_proposal.votes if v.choice == VoteChoice.no)
+        ac_suggest_count = sum(
+            1 for v in act_complete_proposal.votes if v.choice == VoteChoice.suggest_modification
+        )
+
     return templates.TemplateResponse(
         request,
         "scenes.html",
@@ -336,6 +360,11 @@ async def scenes_view(
             "total_players": total_players,
             "threshold": threshold,
             "default_tension": default_tension,
+            "act_complete_proposal": act_complete_proposal,
+            "ac_my_vote": ac_my_vote,
+            "ac_yes_count": ac_yes_count,
+            "ac_no_count": ac_no_count,
+            "ac_suggest_count": ac_suggest_count,
         },
     )
 
@@ -442,6 +471,84 @@ async def propose_scene(
     return RedirectResponse(url=f"/games/{game_id}/acts/{act_id}/scenes", status_code=303)
 
 
+@router.post(
+    "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+    response_class=RedirectResponse,
+)
+async def propose_scene_complete(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Propose completing the current scene. Goes through the standard voting flow."""
+    scene = await _load_scene_for_view(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if scene.status != SceneStatus.active:
+        raise HTTPException(status_code=403, detail="Scene must be active to propose completion")
+
+    has_open = any(
+        p.status == ProposalStatus.open
+        and p.proposal_type == ProposalType.scene_complete
+        and p.scene_id == scene.id
+        for p in game.proposals
+    )
+    if has_open:
+        raise HTTPException(
+            status_code=409, detail="A scene completion proposal is already pending"
+        )
+
+    total_players = len(game.members)
+    proposal = VoteProposal(
+        game_id=game.id,
+        proposal_type=ProposalType.scene_complete,
+        proposed_by_id=current_user.id,
+        scene_id=scene.id,
+    )
+    db.add(proposal)
+    await db.flush()
+
+    db.add(Vote(proposal_id=proposal.id, voter_id=current_user.id, choice=VoteChoice.yes))
+
+    auto_approved = is_approved(1, total_players)
+    if auto_approved:
+        proposal.status = ProposalStatus.approved
+        scene.status = SceneStatus.complete
+
+    link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
+    label = scene.guiding_question[:60]
+    if auto_approved:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.vote_required,
+            f'Scene completed: "{label}"',
+            link=link,
+        )
+    else:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.vote_required,
+            f'Vote needed: complete scene "{label}"',
+            link=link,
+            exclude_user_id=current_user.id,
+        )
+
+    await db.commit()
+    return RedirectResponse(
+        url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", status_code=303
+    )
+
+
 @router.get("/games/{game_id}/acts/{act_id}/scenes/{scene_id}", response_class=HTMLResponse)
 async def scene_detail(
     game_id: int,
@@ -479,6 +586,30 @@ async def scene_detail(
     # Use naive UTC for template comparisons: SQLite returns naive datetimes
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+    scene_complete_proposal = next(
+        (
+            p
+            for p in game.proposals
+            if p.status == ProposalStatus.open
+            and p.proposal_type == ProposalType.scene_complete
+            and p.scene_id == scene.id
+        ),
+        None,
+    )
+    sc_my_vote = None
+    sc_yes_count = sc_no_count = sc_suggest_count = 0
+    if scene_complete_proposal is not None:
+        sc_my_vote = next(
+            (v for v in scene_complete_proposal.votes if v.voter_id == current_user.id), None
+        )
+        sc_yes_count = sum(1 for v in scene_complete_proposal.votes if v.choice == VoteChoice.yes)
+        sc_no_count = sum(1 for v in scene_complete_proposal.votes if v.choice == VoteChoice.no)
+        sc_suggest_count = sum(
+            1 for v in scene_complete_proposal.votes if v.choice == VoteChoice.suggest_modification
+        )
+
+    total_players = len(game.members)
+
     return templates.TemplateResponse(
         request,
         "scene_detail.html",
@@ -494,8 +625,14 @@ async def scene_detail(
             "oracle_vote_counts": oracle_vote_counts,
             "oracle_my_votes": oracle_my_votes,
             "current_user_id": current_user.id,
-            "total_players": len(game.members),
+            "total_players": total_players,
             "now": now,
+            "scene_complete_proposal": scene_complete_proposal,
+            "sc_my_vote": sc_my_vote,
+            "sc_yes_count": sc_yes_count,
+            "sc_no_count": sc_no_count,
+            "sc_suggest_count": sc_suggest_count,
+            "threshold": approval_threshold(total_players),
         },
     )
 

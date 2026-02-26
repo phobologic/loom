@@ -135,6 +135,8 @@ class ProposalType(str, enum.Enum):
     act_proposal = "act_proposal"
     scene_proposal = "scene_proposal"
     beat_proposal = "beat_proposal"
+    scene_complete = "scene_complete"
+    act_complete = "act_complete"
 
 
 class ProposalStatus(str, enum.Enum):

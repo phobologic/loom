@@ -20,6 +20,7 @@ from loom.models import (
     NotificationType,
     ProposalStatus,
     ProposalType,
+    SceneStatus,
     User,
     Vote,
     VoteChoice,
@@ -45,7 +46,7 @@ async def _load_game_for_acts(game_id: int, db: AsyncSession) -> Game | None:
         .where(Game.id == game_id)
         .options(
             selectinload(Game.members),
-            selectinload(Game.acts),
+            selectinload(Game.acts).selectinload(Act.scenes),
             selectinload(Game.proposals).selectinload(VoteProposal.votes).selectinload(Vote.voter),
             selectinload(Game.proposals).selectinload(VoteProposal.proposed_by),
             selectinload(Game.proposals).selectinload(VoteProposal.act),
@@ -195,3 +196,79 @@ async def propose_act(
 
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}/acts", status_code=303)
+
+
+@router.post("/games/{game_id}/acts/{act_id}/complete", response_class=RedirectResponse)
+async def propose_act_complete(
+    game_id: int,
+    act_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Propose completing the current act. Goes through the standard voting flow."""
+    game = await _load_game_for_acts(game_id, db)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    act = next((a for a in game.acts if a.id == act_id), None)
+    if act is None:
+        raise HTTPException(status_code=404, detail="Act not found")
+
+    if act.status != ActStatus.active:
+        raise HTTPException(status_code=403, detail="Act must be active to propose completion")
+
+    has_open = any(
+        p.status == ProposalStatus.open
+        and p.proposal_type == ProposalType.act_complete
+        and p.act_id == act.id
+        for p in game.proposals
+    )
+    if has_open:
+        raise HTTPException(status_code=409, detail="An act completion proposal is already pending")
+
+    total_players = len(game.members)
+    proposal = VoteProposal(
+        game_id=game.id,
+        proposal_type=ProposalType.act_complete,
+        proposed_by_id=current_user.id,
+        act_id=act.id,
+    )
+    db.add(proposal)
+    await db.flush()
+
+    db.add(Vote(proposal_id=proposal.id, voter_id=current_user.id, choice=VoteChoice.yes))
+
+    auto_approved = is_approved(1, total_players)
+    if auto_approved:
+        proposal.status = ProposalStatus.approved
+        act.status = ActStatus.complete
+        for scene in act.scenes:
+            if scene.status == SceneStatus.active:
+                scene.status = SceneStatus.complete
+
+    link = f"/games/{game_id}/acts/{act_id}/scenes"
+    label = act.guiding_question[:60]
+    if auto_approved:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.act_proposed,
+            f'Act completed: "{label}"',
+            link=link,
+        )
+    else:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.vote_required,
+            f'Vote needed: complete act "{label}"',
+            link=link,
+            exclude_user_id=current_user.id,
+        )
+
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}/acts/{act_id}/scenes", status_code=303)

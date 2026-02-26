@@ -140,3 +140,21 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 **Actions:** Bob navigates to `/notifications`.
 **Pass criteria:** At least one "A new beat was submitted" notification is visible.
 **Severity if broken:** P2
+
+---
+
+## 16. Scene completion
+
+**Preconditions:** Active scene (from workflow 10). Alice is a member.
+**Actions:** Alice navigates to the scene detail page. Clicks "Propose Scene Completion". In a single-player game, auto-approves immediately. In a multi-player game, second player navigates to scene and votes yes.
+**Pass criteria:** Scene status shows "Complete". Beat submission form is no longer visible. Scene appears as a link on the scenes list page.
+**Severity if broken:** P1
+
+---
+
+## 17. Act completion
+
+**Preconditions:** Active act with at least one complete scene (from workflow 16). Alice is a member.
+**Actions:** Alice navigates to the scenes list for the act (`/games/{id}/acts/{act_id}/scenes`). Clicks "Propose Act Completion". In a single-player game, auto-approves. In a multi-player game, second player votes yes.
+**Pass criteria:** Act status shows "Complete" on acts page. Scenes page for the completed act remains accessible (HTTP 200). "Propose a New Scene" form is no longer visible.
+**Severity if broken:** P1

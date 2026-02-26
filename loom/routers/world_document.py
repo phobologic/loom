@@ -17,12 +17,14 @@ from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
     Act,
+    ActStatus,
     BeatStatus,
     Game,
     GameMember,
     GameStatus,
     ProposalStatus,
     ProposalType,
+    SceneStatus,
     Session0Prompt,
     User,
     Vote,
@@ -308,6 +310,13 @@ async def cast_vote(
                 activate_scene(act.scenes, proposal.scene)
         elif proposal.proposal_type == ProposalType.beat_proposal and proposal.beat is not None:
             proposal.beat.status = BeatStatus.canon
+        elif proposal.proposal_type == ProposalType.scene_complete and proposal.scene is not None:
+            proposal.scene.status = SceneStatus.complete
+        elif proposal.proposal_type == ProposalType.act_complete and proposal.act is not None:
+            proposal.act.status = ActStatus.complete
+            for scene in proposal.act.scenes:
+                if scene.status == SceneStatus.active:
+                    scene.status = SceneStatus.complete
 
     await db.commit()
 
@@ -325,4 +334,12 @@ async def cast_vote(
             return RedirectResponse(
                 url=f"/games/{game_id}/acts/{act.id}/scenes/{scene_id}", status_code=303
             )
+    if proposal.proposal_type == ProposalType.scene_complete and proposal.scene is not None:
+        scene = proposal.scene
+        return RedirectResponse(
+            url=f"/games/{game_id}/acts/{scene.act_id}/scenes/{scene.id}", status_code=303
+        )
+    if proposal.proposal_type == ProposalType.act_complete and proposal.act is not None:
+        act = proposal.act
+        return RedirectResponse(url=f"/games/{game_id}/acts/{act.id}/scenes", status_code=303)
     return RedirectResponse(url=f"/games/{game_id}/world-document", status_code=303)
