@@ -28,3 +28,10 @@ Red flags to catch:
 
 When you catch one: name the principle, explain the conflict, and propose an alternative
 before proceeding.
+
+## Alembic Migrations
+
+**Always verify the current head before writing a new migration.** Run `uv run alembic heads`
+first — the output must show a single head revision. Use that hash as `down_revision` in the
+new file. Never copy a parent hash from an existing migration file without checking, as another
+migration may already have extended that revision, creating a branch.

@@ -177,6 +177,7 @@ class NotificationType(str, enum.Enum):
     challenge_dismissed = "challenge_dismissed"
     beat_revised = "beat_revised"
     beat_comment_added = "beat_comment_added"
+    spotlight = "spotlight"
 
 
 # ---------------------------------------------------------------------------
@@ -426,12 +427,20 @@ class Beat(TimestampMixin, Base):
     challenged_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    waiting_for_character_id: Mapped[int | None] = mapped_column(
+        ForeignKey("characters.id", ondelete="SET NULL"), nullable=True
+    )
+    spotlight_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    spotlight_resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     scene: Mapped[Scene] = relationship(back_populates="beats")
     author: Mapped[User | None] = relationship(
         back_populates="beats", foreign_keys="[Beat.author_id]"
     )
     challenged_by: Mapped[User | None] = relationship(foreign_keys="[Beat.challenged_by_id]")
+    waiting_for_character: Mapped["Character | None"] = relationship(
+        foreign_keys="[Beat.waiting_for_character_id]"
+    )
     events: Mapped[list[Event]] = relationship(
         back_populates="beat",
         cascade="all, delete-orphan",

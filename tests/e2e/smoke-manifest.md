@@ -203,3 +203,21 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 **Actions:** Navigate to the scene detail page.
 **Pass criteria:** A "Contributions this scene:" panel appears above the beat timeline, listing each game member by name with their IC beat count and a proportional bar. Members with zero beats show "0 beats" and no bar. The panel refreshes when new beats are posted (via HTMX polling every 5 seconds).
 **Severity if broken:** P2
+
+---
+
+## 23. Spotlight / Waiting for Response (REQ-PACE-003)
+
+**Preconditions:** Active scene with at least 2 characters present owned by different players (Alice owns Character A, Bob owns Character B).
+**Actions:**
+1. Alice submits a beat and selects "Character B" in the "Spotlight (optional)" dropdown.
+2. Verify Bob receives a spotlight notification.
+3. Navigate to the scene detail page.
+**Pass criteria:**
+- The "Characters present" list shows Character B with a ⏳ badge.
+- An amber spotlight banner appears: "⏳ Character B is in the spotlight — someone is waiting for a response."
+- Alice's beat in the timeline shows "⏳ Waiting for Character B."
+- Bob submits any beat → spotlight resolves: banner disappears, Alice's beat now shows "[Response received from Character B]" (muted), Character B badge clears.
+- After `silence_timer_hours` have elapsed from the spotlight beat, the banner and ⏳ indicators no longer appear (spotlight expired).
+- If no characters other than Alice's are present in the scene, the "Spotlight" dropdown does not appear.
+**Severity if broken:** P2

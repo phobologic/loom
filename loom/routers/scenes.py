@@ -77,9 +77,12 @@ async def _load_scene_for_view(scene_id: int, db: AsyncSession) -> Scene | None:
             .selectinload(Act.game)
             .selectinload(Game.proposals)
             .selectinload(VoteProposal.proposed_by),
-            selectinload(Scene.characters_present),
+            selectinload(Scene.characters_present).selectinload(Character.owner),
             selectinload(Scene.beats).selectinload(Beat.author),
             selectinload(Scene.beats).selectinload(Beat.challenged_by),
+            selectinload(Scene.beats)
+            .selectinload(Beat.waiting_for_character)
+            .selectinload(Character.owner),
             selectinload(Scene.beats).selectinload(Beat.events),
             selectinload(Scene.beats)
             .selectinload(Beat.events)
@@ -124,6 +127,19 @@ def _count_consecutive_ic_beats(beats: list[Beat], user_id: int) -> int:
         else:
             break
     return count
+
+
+def _get_active_spotlight(beats: list[Beat], now: datetime) -> Beat | None:
+    """Return the most recent unresolved, unexpired spotlight beat, or None."""
+    for beat in reversed(beats):
+        if (
+            beat.waiting_for_character_id is not None
+            and beat.spotlight_resolved_at is None
+            and beat.spotlight_expires_at is not None
+            and beat.spotlight_expires_at > now
+        ):
+            return beat
+    return None
 
 
 def _compute_contribution_counts(scene: Scene) -> dict[int, int]:
@@ -698,6 +714,11 @@ async def scene_detail(
         else None
     )
 
+    active_spotlight = _get_active_spotlight(beats, now)
+
+    # Characters present in this scene not owned by the current user (for spotlight dropdown)
+    spotlightable_chars = [c for c in scene.characters_present if c.owner_id != current_user.id]
+
     return templates.TemplateResponse(
         request,
         "scene_detail.html",
@@ -729,6 +750,8 @@ async def scene_detail(
             "ta_proposed_tension": ta_proposed_tension,
             "nudge": nudge,
             "contribution_counts": contribution_counts,
+            "active_spotlight": active_spotlight,
+            "spotlightable_chars": spotlightable_chars,
         },
     )
 
@@ -749,6 +772,7 @@ async def submit_beat(
     event_notation: list[str] = Form(default=[]),
     event_reason: list[str] = Form(default=[]),
     beat_significance: str = Form(default="minor"),
+    waiting_for_character_id: int | None = Form(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -900,6 +924,41 @@ async def submit_beat(
         link=scene_link,
         exclude_user_id=current_user.id,
     )
+
+    # Spotlight / waiting for response (REQ-PACE-003)
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    if waiting_for_character_id is not None:
+        spotlight_char = next(
+            (c for c in scene.characters_present if c.id == waiting_for_character_id), None
+        )
+        if spotlight_char is None:
+            raise HTTPException(
+                status_code=422, detail="Spotlighted character is not present in this scene"
+            )
+        beat.waiting_for_character_id = spotlight_char.id
+        beat.spotlight_expires_at = now_utc + timedelta(hours=game.silence_timer_hours)
+        if spotlight_char.owner is not None and spotlight_char.owner_id != current_user.id:
+            await create_notification(
+                db,
+                user_id=spotlight_char.owner_id,
+                game_id=game.id,
+                notification_type=NotificationType.spotlight,
+                message=f"Your character {spotlight_char.name!r} has been spotlighted — someone is waiting for your response",
+                link=scene_link,
+            )
+
+    # Resolve any active spotlights waiting for characters owned by the current user
+    for prior_beat in scene.beats:
+        if (
+            prior_beat.id != beat.id
+            and prior_beat.waiting_for_character_id is not None
+            and prior_beat.spotlight_resolved_at is None
+            and prior_beat.spotlight_expires_at is not None
+            and prior_beat.spotlight_expires_at > now_utc
+            and prior_beat.waiting_for_character is not None
+            and prior_beat.waiting_for_character.owner_id == current_user.id
+        ):
+            prior_beat.spotlight_resolved_at = now_utc
 
     await db.commit()
 
@@ -1205,6 +1264,8 @@ async def beats_partial(
     # Use naive UTC for template comparisons: SQLite returns naive datetimes
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+    active_spotlight = _get_active_spotlight(beats, now)
+
     return templates.TemplateResponse(
         request,
         "_beats_partial.html",
@@ -1221,5 +1282,6 @@ async def beats_partial(
             "scene": scene,
             "now": now,
             "contribution_counts": contribution_counts,
+            "active_spotlight": active_spotlight,
         },
     )
