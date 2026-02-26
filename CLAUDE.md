@@ -10,6 +10,8 @@
 
 Use the `playwright-cli` skill (via `/playwright-cli`) for end-to-end browser testing, UI smoke tests, and verifying rendered HTML behavior.
 
+**Before every playwright-cli invocation**, state in plain English what you are about to do and why — e.g. "Navigating to the login page to verify the redirect after successful auth." Do this as regular text output, not as a tool call.
+
 - Use for auth flows, page navigation, and JS/HTMX interaction testing
 - Complements the API-level tests in `tests/` which use FastAPI TestClient
 - Start the dev server first: `uv run uvicorn loom.main:app --reload`
