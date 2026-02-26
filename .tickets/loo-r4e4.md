@@ -1,6 +1,6 @@
 ---
 id: loo-r4e4
-status: in_progress
+status: closed
 deps: [loo-1xem]
 links: []
 created: 2026-02-26T05:20:05Z
