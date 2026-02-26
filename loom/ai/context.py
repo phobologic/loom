@@ -104,6 +104,32 @@ def assemble_scene_context(
     return "\n\n".join(parts)
 
 
+def format_tension_context(tension: int) -> str:
+    """Format scene tension as a tonal guidance block for AI prompts.
+
+    Args:
+        tension: Current scene tension value (1-9).
+
+    Returns:
+        A formatted string describing the tension level and tonal guidance.
+    """
+    if tension <= 3:
+        descriptor = (
+            "low — favour subtle, seed-planting interpretations that introduce "
+            "possibilities without forcing escalation"
+        )
+    elif tension <= 6:
+        descriptor = (
+            "moderate — balanced interpretations that neither force escalation nor deflate tension"
+        )
+    else:
+        descriptor = (
+            "high — favour dramatic, escalating interpretations that heighten "
+            "stakes and push the story forward"
+        )
+    return f"CURRENT TENSION: {tension}/9 ({descriptor})"
+
+
 def scene_context_components(game: Game, scene: Scene) -> list[str]:
     """Return the names of context components that assemble_scene_context would include.
 
@@ -117,7 +143,7 @@ def scene_context_components(game: Game, scene: Scene) -> list[str]:
     Returns:
         A list of component name strings (e.g. ["world_document", "beat_history"]).
     """
-    components: list[str] = ["act_guiding_question", "scene_guiding_question"]
+    components: list[str] = ["act_guiding_question", "scene_guiding_question", "tension"]
     if game.world_document and game.world_document.content:
         components.insert(0, "world_document")
     if scene.characters_present:

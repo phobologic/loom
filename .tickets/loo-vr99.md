@@ -1,6 +1,6 @@
 ---
 id: loo-vr99
-status: open
+status: closed
 deps: [loo-gmld]
 links: []
 created: 2026-02-26T05:19:36Z

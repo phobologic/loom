@@ -16,7 +16,11 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from loom.ai.context import assemble_scene_context, scene_context_components
+from loom.ai.context import (
+    assemble_scene_context,
+    format_tension_context,
+    scene_context_components,
+)
 from loom.ai.provider import UsageInfo, get_provider
 from loom.ai.schemas import (
     BeatClassification,
@@ -94,6 +98,9 @@ async def oracle_interpretations(
         if context_block:
             prompt_parts.append(context_block)
         context_comps = scene_context_components(game, scene)
+
+    if scene is not None:
+        prompt_parts.append(format_tension_context(scene.tension))
 
     prompt_parts.append(
         f"ORACLE QUESTION: {question}\nWORD SEEDS: action={action!r}, descriptor={descriptor!r}"
