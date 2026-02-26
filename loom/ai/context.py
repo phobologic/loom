@@ -102,3 +102,29 @@ def assemble_scene_context(
             parts.append(safety_ctx)
 
     return "\n\n".join(parts)
+
+
+def scene_context_components(game: Game, scene: Scene) -> list[str]:
+    """Return the names of context components that assemble_scene_context would include.
+
+    Inspects the loaded relationships without re-assembling the full context
+    string. Used for AI usage logging.
+
+    Args:
+        game: Game instance (same state as passed to assemble_scene_context).
+        scene: Scene instance (same state as passed to assemble_scene_context).
+
+    Returns:
+        A list of component name strings (e.g. ["world_document", "beat_history"]).
+    """
+    components: list[str] = ["act_guiding_question", "scene_guiding_question"]
+    if game.world_document and game.world_document.content:
+        components.insert(0, "world_document")
+    if scene.characters_present:
+        components.append("characters_present")
+    canon_beats = [b for b in scene.beats if b.status == BeatStatus.canon]
+    if canon_beats:
+        components.append("beat_history")
+    if game.safety_tools:
+        components.append("safety_tools")
+    return components

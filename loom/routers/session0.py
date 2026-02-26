@@ -301,6 +301,8 @@ async def synthesize_prompt(
         inputs,
         game_name=game.name,
         pitch=game.pitch or "",
+        db=db,
+        game_id=game_id,
     )
     prompt.synthesis_accepted = False
     await db.commit()
@@ -335,6 +337,8 @@ async def regenerate_synthesis(
         inputs,
         game_name=game.name,
         pitch=game.pitch or "",
+        db=db,
+        game_id=game_id,
     )
     prompt.synthesis_accepted = False
     await db.commit()

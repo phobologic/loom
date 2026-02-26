@@ -170,6 +170,8 @@ async def invoke_oracle(
         (word_action.strip(), word_descriptor.strip()),
         game=game,
         scene=scene,
+        db=db,
+        game_id=game_id,
     )
 
     next_order = max((b.order for b in scene.beats), default=0) + 1

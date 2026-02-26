@@ -113,7 +113,9 @@ async def create_world_doc_and_proposal(
     total_players = len(game.members)
 
     # Generate (or regenerate) world document content
-    content = await _ai_generate_world_document(_collect_session0_data(game))
+    content = await _ai_generate_world_document(
+        _collect_session0_data(game), db=db, game_id=game.id
+    )
 
     world_doc = game.world_document
     if world_doc is None:

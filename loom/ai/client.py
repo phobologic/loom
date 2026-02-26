@@ -4,12 +4,20 @@ Each function maps to a specific AI feature and uses the model configured for
 that feature's category (classification vs. creative) in Settings. All
 responses are validated Pydantic models via instructor — format constraints
 live in loom/ai/schemas.py, not in prompt text.
+
+Every function accepts optional ``db`` and ``game_id`` parameters. When
+provided, an AIUsageLog row is written after each successful call so all AI
+activity is queryable for analysis.
 """
 
 from __future__ import annotations
 
-from loom.ai.context import assemble_scene_context
-from loom.ai.provider import get_provider
+import json
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from loom.ai.context import assemble_scene_context, scene_context_components
+from loom.ai.provider import UsageInfo, get_provider
 from loom.ai.schemas import (
     BeatClassification,
     OracleResponse,
@@ -17,7 +25,31 @@ from loom.ai.schemas import (
     WorldDocumentResponse,
 )
 from loom.config import settings
-from loom.models import Game, Scene
+from loom.models import AIUsageLog, Game, Scene
+
+
+async def _log_usage(
+    db: AsyncSession,
+    *,
+    feature: str,
+    model: str,
+    usage: UsageInfo,
+    context_components: list[str] | None = None,
+    game_id: int | None = None,
+) -> None:
+    """Insert an AIUsageLog row. Committed as part of the caller's session."""
+    log = AIUsageLog(
+        feature=feature,
+        model=model,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        context_components=json.dumps(context_components)
+        if context_components is not None
+        else None,
+        game_id=game_id,
+    )
+    db.add(log)
+    await db.flush()
 
 
 async def oracle_interpretations(
@@ -26,6 +58,8 @@ async def oracle_interpretations(
     *,
     game: Game | None = None,
     scene: Scene | None = None,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
 ) -> list[str]:
     """Generate 3 oracle interpretations for a question and word pair.
 
@@ -36,6 +70,8 @@ async def oracle_interpretations(
               safety_tools should be loaded).
         scene: Current scene for narrative context (act, beats, characters_present
                should be loaded).
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
 
     Returns:
         A list of exactly 3 interpretation strings.
@@ -49,24 +85,38 @@ async def oracle_interpretations(
     )
 
     prompt_parts: list[str] = []
+    context_comps: list[str] | None = None
     if game is not None and scene is not None:
         context_block = assemble_scene_context(
             game, scene, beat_history_window=settings.ai_context_beat_history_window
         )
         if context_block:
             prompt_parts.append(context_block)
+        context_comps = scene_context_components(game, scene)
 
     prompt_parts.append(
         f"ORACLE QUESTION: {question}\nWORD SEEDS: action={action!r}, descriptor={descriptor!r}"
     )
 
-    response = await get_provider().generate_structured(
+    model = settings.ai_model_creative
+    response, usage = await get_provider().generate_structured(
         system=system,
         prompt="\n\n".join(prompt_parts),
-        model=settings.ai_model_creative,
+        model=model,
         max_tokens=512,
         response_model=OracleResponse,
     )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="oracle_interpretations",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
     return response.interpretations
 
 
@@ -76,6 +126,8 @@ async def session0_synthesis(
     *,
     game_name: str = "",
     pitch: str = "",
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
 ) -> str:
     """Synthesize player responses to a Session 0 prompt into a coherent paragraph.
 
@@ -84,6 +136,8 @@ async def session0_synthesis(
         inputs: Player responses to synthesize.
         game_name: Name of the game (for context).
         pitch: Game pitch (for context).
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
 
     Returns:
         A synthesis paragraph capturing the group's shared vision.
@@ -96,32 +150,55 @@ async def session0_synthesis(
     )
 
     lines: list[str] = []
+    context_comps: list[str] = []
     if game_name:
         lines.append(f"Game: {game_name}")
+        context_comps.append("game_name")
     if pitch:
         lines.append(f"Pitch: {pitch}")
+        context_comps.append("pitch")
     lines.append(f"Prompt: {question}")
     lines.append("\nPlayer responses:")
     for i, inp in enumerate(inputs, 1):
         lines.append(f"  {i}. {inp}")
+    context_comps.append("player_responses")
 
-    response = await get_provider().generate_structured(
+    model = settings.ai_model_creative
+    response, usage = await get_provider().generate_structured(
         system=system,
         prompt="\n".join(lines),
-        model=settings.ai_model_creative,
+        model=model,
         max_tokens=512,
         response_model=SynthesisResponse,
     )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="session0_synthesis",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
     return response.text
 
 
-async def generate_world_document(session0_data: dict) -> str:
+async def generate_world_document(
+    session0_data: dict,
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> str:
     """Generate a world document from Session 0 synthesis data.
 
     Args:
         session0_data: Dict with keys:
             game_name (str), pitch (str | None),
             prompts (list of {question, synthesis, responses}).
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
 
     Returns:
         A structured Markdown world document.
@@ -143,21 +220,40 @@ async def generate_world_document(session0_data: dict) -> str:
         if q and synth:
             prompt_parts.append(f"\n**{q}**\n{synth}")
 
-    response = await get_provider().generate_structured(
+    model = settings.ai_model_creative
+    response, usage = await get_provider().generate_structured(
         system=system,
         prompt="\n".join(prompt_parts),
-        model=settings.ai_model_creative,
+        model=model,
         max_tokens=2048,
         response_model=WorldDocumentResponse,
     )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="generate_world_document",
+            model=model,
+            usage=usage,
+            context_components=["session0_syntheses"],
+            game_id=game_id,
+        )
+
     return response.markdown
 
 
-async def classify_beat_significance(beat_text: str) -> str:
+async def classify_beat_significance(
+    beat_text: str,
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> str:
     """Classify a beat as 'minor' or 'major' based on its narrative weight.
 
     Args:
         beat_text: The full text of the beat to classify.
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
 
     Returns:
         Either "minor" or "major".
@@ -167,11 +263,22 @@ async def classify_beat_significance(beat_text: str) -> str:
         "Classify the provided beat based on its narrative weight."
     )
 
-    response = await get_provider().generate_structured(
+    model = settings.ai_model_classification
+    response, usage = await get_provider().generate_structured(
         system=system,
         prompt=f"Beat text:\n{beat_text}",
-        model=settings.ai_model_classification,
+        model=model,
         max_tokens=64,
         response_model=BeatClassification,
     )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="classify_beat_significance",
+            model=model,
+            usage=usage,
+            game_id=game_id,
+        )
+
     return response.significance

@@ -724,6 +724,32 @@ class WordSeedEntry(TimestampMixin, Base):
     table: Mapped[WordSeedTable] = relationship(back_populates="entries")
 
 
+class AIUsageLog(Base):
+    """A log entry for every AI model call made by the system.
+
+    Stores the feature that triggered the call, token counts, context
+    components included, and model used. Not exposed to players in v1.
+    """
+
+    __tablename__ = "ai_usage_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    feature: Mapped[str] = mapped_column(String(100), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    # JSON-encoded list of context component names included in the prompt
+    context_components: Mapped[str | None] = mapped_column(Text, nullable=True)
+    game_id: Mapped[int | None] = mapped_column(
+        ForeignKey("games.id", ondelete="SET NULL"), nullable=True
+    )
+
+    game: Mapped[Game | None] = relationship()
+
+
 class Notification(TimestampMixin, Base):
     """A per-user in-app notification for a game event."""
 

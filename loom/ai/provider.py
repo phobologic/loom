@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TypeVar
 
 import anthropic
@@ -11,6 +12,14 @@ from pydantic import BaseModel
 from loom.config import settings
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass
+class UsageInfo:
+    """Token usage from a single AI call."""
+
+    input_tokens: int
+    output_tokens: int
 
 
 class AnthropicProvider:
@@ -38,7 +47,7 @@ class AnthropicProvider:
         model: str,
         max_tokens: int = 1024,
         response_model: type[T],
-    ) -> T:
+    ) -> tuple[T, UsageInfo]:
         """Send a prompt to the Anthropic API and return a validated Pydantic model.
 
         Args:
@@ -49,15 +58,20 @@ class AnthropicProvider:
             response_model: Pydantic model class defining the expected output shape.
 
         Returns:
-            A validated instance of response_model.
+            A tuple of (validated response_model instance, UsageInfo with token counts).
         """
-        return await self._get_client().messages.create(
+        result, raw = await self._get_client().messages.create_with_completion(
             model=model,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": prompt}],
             response_model=response_model,
         )
+        usage = UsageInfo(
+            input_tokens=raw.usage.input_tokens,
+            output_tokens=raw.usage.output_tokens,
+        )
+        return result, usage
 
 
 _provider = AnthropicProvider()

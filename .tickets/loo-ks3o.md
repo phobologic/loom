@@ -1,6 +1,6 @@
 ---
 id: loo-ks3o
-status: open
+status: closed
 deps: [loo-hxhp]
 links: []
 created: 2026-02-26T05:19:28Z
