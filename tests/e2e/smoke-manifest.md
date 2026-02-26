@@ -185,3 +185,21 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 **Actions:** Bob challenges Alice's beat. Bob (or Alice) adds a comment via the comment form below the challenge. Alice navigates to the scene detail page, reads the comment, and clicks "Dismiss — beat stands as written."
 **Pass criteria:** Beat returns to `[Canon]` status. Challenge reason is no longer displayed. Bob receives a notification that the challenge was dismissed. The comment thread remains visible in the beat display.
 **Severity if broken:** P1
+
+---
+
+## 21. Consecutive beat nudge (REQ-PACE-001)
+
+**Preconditions:** Active scene. Alice is a member. `max_consecutive_beats` setting is 3 (default). Alice has already submitted 2 consecutive IC beats with no beat by another player in between.
+**Actions:** Alice submits a third IC beat.
+**Pass criteria:** Scene page shows a yellow nudge banner: "You've posted the last 3 beats — maybe see if others want to jump in?" The beat is still submitted and appears in the timeline normally. The nudge does not prevent further posting.
+**Severity if broken:** P2
+
+---
+
+## 22. Contribution visibility (REQ-PACE-002)
+
+**Preconditions:** Active scene with at least one IC beat posted by any player.
+**Actions:** Navigate to the scene detail page.
+**Pass criteria:** A "Contributions this scene:" panel appears above the beat timeline, listing each game member by name with their IC beat count and a proportional bar. Members with zero beats show "0 beats" and no bar. The panel refreshes when new beats are posted (via HTMX polling every 5 seconds).
+**Severity if broken:** P2

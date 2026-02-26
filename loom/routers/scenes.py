@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,7 +64,10 @@ async def _load_scene_for_view(scene_id: int, db: AsyncSession) -> Scene | None:
         select(Scene)
         .where(Scene.id == scene_id)
         .options(
-            selectinload(Scene.act).selectinload(Act.game).selectinload(Game.members),
+            selectinload(Scene.act)
+            .selectinload(Act.game)
+            .selectinload(Game.members)
+            .selectinload(GameMember.user),
             selectinload(Scene.act)
             .selectinload(Act.game)
             .selectinload(Game.proposals)
@@ -99,6 +102,37 @@ def _apply_beat_filter(beats: list[Beat], filter_val: str) -> list[Beat]:
     if filter_val == "ooc":
         return [b for b in beats if any(e.type.value in _OOC_EVENT_TYPES for e in b.events)]
     return beats
+
+
+def _beat_is_ic(beat: Beat) -> bool:
+    """True if the beat contains at least one non-OOC event."""
+    return any(e.type.value in _IC_EVENT_TYPES for e in beat.events)
+
+
+def _count_consecutive_ic_beats(beats: list[Beat], user_id: int) -> int:
+    """Count consecutive IC beats by user_id at the tail of the beat list.
+
+    OOC-only beats are skipped — they neither count toward nor break the streak.
+    Stops when an IC beat by a different user is encountered.
+    """
+    count = 0
+    for beat in reversed(beats):
+        if not _beat_is_ic(beat):
+            continue  # skip OOC-only beats
+        if beat.author_id == user_id:
+            count += 1
+        else:
+            break
+    return count
+
+
+def _compute_contribution_counts(scene: Scene) -> dict[int, int]:
+    """Return {user_id: ic_beat_count} for all members with IC beats in the scene."""
+    counts: dict[int, int] = {}
+    for beat in scene.beats:
+        if _beat_is_ic(beat) and beat.author_id is not None:
+            counts[beat.author_id] = counts.get(beat.author_id, 0) + 1
+    return counts
 
 
 async def _resolve_beat_proposals(
@@ -559,6 +593,7 @@ async def scene_detail(
     scene_id: int,
     request: Request,
     filter: str = "all",
+    nudge: int | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -579,6 +614,7 @@ async def scene_detail(
 
     beats = sorted(scene.beats, key=lambda b: b.order)
     filtered_beats = _apply_beat_filter(beats, filter)
+    contribution_counts = _compute_contribution_counts(scene)
 
     beat_proposals, beat_vote_counts, beat_my_votes = await _resolve_beat_proposals(
         scene, current_user.id, db
@@ -691,6 +727,8 @@ async def scene_detail(
             "ta_suggest_count": ta_suggest_count,
             "ta_no_count": ta_no_count,
             "ta_proposed_tension": ta_proposed_tension,
+            "nudge": nudge,
+            "contribution_counts": contribution_counts,
         },
     )
 
@@ -778,6 +816,16 @@ async def submit_beat(
     significance = BeatSignificance(beat_significance)
     status = BeatStatus.canon if significance == BeatSignificance.minor else BeatStatus.proposed
 
+    # Consecutive beat nudge (REQ-PACE-001)
+    sorted_beats = sorted(scene.beats, key=lambda b: b.order)
+    new_beat_has_ic = any(spec["type"] in _IC_EVENT_TYPES for spec in event_specs)
+    show_nudge = False
+    nudge_count = 0
+    if new_beat_has_ic:
+        existing_consecutive = _count_consecutive_ic_beats(sorted_beats, current_user.id)
+        nudge_count = existing_consecutive + 1
+        show_nudge = nudge_count >= game.max_consecutive_beats
+
     next_order = max((b.order for b in scene.beats), default=0) + 1
 
     beat = Beat(
@@ -855,10 +903,8 @@ async def submit_beat(
 
     await db.commit()
 
-    return RedirectResponse(
-        url=scene_link,
-        status_code=303,
-    )
+    redirect_url = f"{scene_link}?nudge={nudge_count}" if show_nudge else scene_link
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 
 @router.post("/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge")
@@ -1148,6 +1194,7 @@ async def beats_partial(
 
     beats = sorted(scene.beats, key=lambda b: b.order)
     filtered_beats = _apply_beat_filter(beats, filter)
+    contribution_counts = _compute_contribution_counts(scene)
 
     beat_proposals, beat_vote_counts, beat_my_votes = await _resolve_beat_proposals(
         scene, current_user.id, db
@@ -1173,5 +1220,6 @@ async def beats_partial(
             "act": scene.act,
             "scene": scene,
             "now": now,
+            "contribution_counts": contribution_counts,
         },
     )

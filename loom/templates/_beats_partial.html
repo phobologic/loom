@@ -1,3 +1,17 @@
+{% if game.members %}
+<div style="margin-bottom:1rem; font-size:0.82rem; color:#555; padding:0.5rem 0.75rem; border:1px solid #e0e0e0; border-radius:4px; background:#fafafa;">
+  <strong>Contributions this scene:</strong>
+  <ul style="list-style:none; padding:0; margin:0.25rem 0 0; display:flex; flex-wrap:wrap; gap:0.4rem 1.2rem;">
+    {% for member in game.members %}
+    {% set count = contribution_counts.get(member.user_id, 0) %}
+    <li style="margin:0;">
+      {{ member.user.display_name }}: <strong>{{ count }}</strong> beat{{ 's' if count != 1 else '' }}
+      {% if count > 0 %}<span style="display:inline-block; height:0.6rem; width:{{ [count * 10, 100] | min }}px; background:#6a9fd8; border-radius:2px; vertical-align:middle; margin-left:0.25rem;"></span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 {% if beats %}
 <ol style="list-style:none; padding:0; margin:0;">
   {% for beat in beats %}

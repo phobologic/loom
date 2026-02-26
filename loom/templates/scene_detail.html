@@ -37,6 +37,12 @@
   {% endif %}
 </section>
 
+{% if nudge %}
+<div style="margin-top:1rem; padding:0.6rem 1rem; background:#fff8e0; border:1px solid #e0c060; border-radius:4px; font-size:0.9rem;">
+  You've posted the last {{ nudge }} beat{{ 's' if nudge != 1 else '' }} — maybe see if others want to jump in?
+</div>
+{% endif %}
+
 <section style="margin-top:1.5rem;">
   <h2>Beat Timeline</h2>
 
