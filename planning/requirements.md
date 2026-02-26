@@ -10,7 +10,11 @@ The core design philosophy: keep the fiction moving, make collaboration lightwei
 
 - **Async-first**: Every interaction is designed for players who check in at different times throughout the day. Synchronous play is possible but not the primary mode.
 - **Silence is consent**: If no one objects within a configurable time window, proposed content becomes canon. This prevents async games from stalling.
-- **Player authority**: The player who acts (rolls, proposes) gets the final say on their own beats, informed by group input and AI suggestions. The group's authority is exercised through voting on major beats, challenges, and collaborative framing.
+- **Player authority**: The player who acts (rolls, proposes) gets the final say on their own beats, informed by group input and AI suggestions. The group's authority is exercised through voting on *proposed* content (major beats, scenes, acts) and collaborative framing. Challenges to already-canon beats are resolved through discussion, with the original author deciding the outcome.
+- **Author authority on canon**: Once a beat is canon, the player who authored it has final say over whether it gets revised. Other players can raise concerns and discuss, but the system does not allow forcing a change to someone's accepted contribution. This prevents adversarial dynamics in what should be a collaborative storytelling space.
+- **Nudges over mandates**: Loom guides player behavior through suggestions, nudges, and social cues rather than hard mechanical blocks. The consecutive beat limit is a suggestion, not a gate. The challenge system facilitates conversation, not a forced override. When designing a feature, prefer a gentle prompt that players can ignore over a lock that prevents action.
+- **AI assists, players decide**: The AI generates options, surfaces suggestions, and explains its reasoning — but never makes a narrative decision unilaterally. The invoker selects among oracle interpretations. Players vote on tension adjustments. Beat significance is a suggestion the submitting player can override. Any feature where AI output becomes canon without explicit player confirmation violates this principle.
+- **Organizer has no narrative privilege**: The game organizer has administrative powers (settings, invites, pausing) but identical narrative authority to every other player. They cannot approve their own beats faster, skip challenges, or override group decisions. This keeps the creative space equal.
 - **Bullets over prose**: Players should never feel pressured to write polished text. Quick shorthand is always acceptable; the AI can expand it later.
 - **Progressive disclosure**: New groups get scaffolding and guidance. Experienced groups can skip what they don't need.
 
@@ -36,7 +40,7 @@ Game (settings, world document, members, active word seed tables)
 
 **Canon** - The accepted, official state of the fiction. A minor beat becomes canon the instant it's submitted. A major beat becomes canon when the group approves it (or the silence timer expires without objection).
 
-**Challenge** - A mechanism for any player to flag a canon beat as inconsistent with the established fiction. The original author can revise, or the group votes on whether the beat stands. Challenges are for genuine fictional inconsistencies, not creative disagreements.
+**Challenge** - A mechanism for any player to flag a canon beat as inconsistent with the established fiction. The original author responds by accepting the concern and revising, or dismissing it. Other players can add comments to discuss the concern. The author's decision is final. Challenges are for genuine fictional inconsistencies, not creative disagreements.
 
 **Characters Present** - A dynamic, point-in-time list of which characters are currently in the active scene. Updated automatically as characters enter and leave. Used by the AI to ensure oracle suggestions and prose only reference characters who are actually there.
 
@@ -131,7 +135,7 @@ Game (settings, world document, members, active word seed tables)
 - Configurable settings include:
   - Silence timer duration (default: 12 hours) - how long before uncontested major beats auto-approve.
   - Voting threshold: majority of all players (default, non-configurable formula, but the timer is adjustable).
-  - Tie-breaking method (options: random/die roll, proposer decides, challenger decides; default: random).
+  - Tie-breaking method (options: random/die roll, proposer decides; default: random).
   - Beat significance threshold (options: flag most things as major, only flag obvious things, minimal flagging; default: only flag obvious things).
   - Maximum consecutive beats per player before soft spotlight nudge (default: 3).
   - Auto-generate narrative on scene/act completion (default: on).
@@ -360,7 +364,7 @@ Game (settings, world document, members, active word seed tables)
 - When a minor beat is submitted, it becomes canon immediately. No approval gate or waiting period is required. Other players can challenge it after the fact if needed (see REQ-CHALLENGE).
 - When a major beat is submitted, it enters "proposed" status and requires explicit approval via voting (see REQ-VOTE). The silence timer applies only to major beats.
 - Any player can challenge a canon beat (see REQ-CHALLENGE), moving it to "challenged" status.
-- A challenged beat can be revised by the original author (status: revised, then re-enters the approval flow as a major beat) or rejected by group vote.
+- A challenged beat can be revised by the original author (status: revised, then re-enters the approval flow as a major beat) or dismissed by the author (beat returns to canon). Discussion happens through beat comments.
 
 ### REQ-BEAT-004: Beat Significance Classification
 *Requirement:* When a player submits a beat, Loom shall classify it as major or minor.
@@ -440,7 +444,7 @@ Game (settings, world document, members, active word seed tables)
 ### REQ-ORACLE-004: Oracle Vote Tie-Breaking
 *Requirement:* When oracle votes result in a tie, Loom shall resolve it according to the game's configured tie-breaking method.
 *Acceptance Criteria:*
-- Tie-breaking methods: random (roll a die between tied options - default), proposer decides, challenger decides.
+- Tie-breaking methods: random (roll a die between tied options - default), proposer decides.
 - The tie-breaking method is configurable per game.
 - All tie-breaking methods are available as configuration options.
 
@@ -568,13 +572,22 @@ Game (settings, world document, members, active word seed tables)
 - All other game members receive a broadcast notification so everyone is aware a challenge is active.
 
 ### REQ-CHALLENGE-002: Challenge Resolution
-*Requirement:* When a beat has been challenged, Loom shall facilitate resolution.
+*Requirement:* When a beat has been challenged, Loom shall facilitate discussion and author-led resolution.
 *Acceptance Criteria:*
-- The original author can accept the challenge and revise the beat.
-- If the original author disagrees, the challenge goes to a group vote.
-- The vote determines whether the beat stands as-is or must be revised.
-- Tie-breaking follows the game's configured tie-breaking method.
-- If the beat must be revised, it re-enters the proposed state and goes through the approval flow again.
+- The original author sees the challenge reason and can: (a) accept the concern and submit a revision, or (b) dismiss the concern and return the beat to canon.
+- Any game member (including the challenger) can post a comment on a challenged beat to discuss the concern, provide context, or suggest alternatives. Comments are visible to all members.
+- If the author accepts: they submit revised content. The beat re-enters the proposed state and goes through the normal approval flow as a major beat (with silence timer).
+- If the author dismisses: the beat returns to canon status. The challenger and all other members are notified of the dismissal.
+- Only the original author can accept or dismiss a challenge. No vote can override this.
+- Notifications: author notified when a comment is posted; challenger notified on accept/dismiss; all members notified when a revision enters the approval flow.
+
+### REQ-CHALLENGE-003: Beat Comments
+*Requirement:* While a beat is challenged, all game members can post comments to discuss the concern.
+*Acceptance Criteria:*
+- Any game member can post a text comment on a challenged beat.
+- Comments are displayed in chronological order below the challenge details.
+- Comments persist even after the challenge is resolved, as a record of the discussion.
+- The beat author receives a notification when a new comment is posted on their challenged beat.
 
 ---
 

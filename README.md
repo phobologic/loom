@@ -16,8 +16,19 @@ the players.
   not the primary mode.
 - **Silence is consent** — if no one objects within a configurable window,
   proposed content becomes canon. Async games don't stall.
-- **Player authority** — the player who acts gets final say on their own
-  beats, informed by group input and AI suggestions.
+- **Player authority** — the group votes on *proposed* content (major beats,
+  scenes, acts). Challenges to already-canon beats are resolved through
+  discussion, with the original author deciding the outcome.
+- **Author authority on canon** — once a beat is canon, the player who
+  authored it has final say over whether it gets revised. Other players can
+  raise concerns and discuss, but cannot force a change. This keeps play
+  collaborative rather than adversarial.
+- **Nudges over mandates** — the system guides through suggestions and social
+  cues rather than hard blocks. Players can always override a nudge if the
+  fiction demands it.
+- **AI assists, players decide** — the AI generates options and explains its
+  reasoning, but never makes a narrative decision unilaterally. Players
+  always make the final call.
 - **Bullets over prose** — quick shorthand is always acceptable; the AI can
   expand it later.
 

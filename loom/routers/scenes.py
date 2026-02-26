@@ -20,6 +20,7 @@ from loom.models import (
     Act,
     ActStatus,
     Beat,
+    BeatComment,
     BeatSignificance,
     BeatStatus,
     Character,
@@ -85,6 +86,7 @@ async def _load_scene_for_view(scene_id: int, db: AsyncSession) -> Scene | None:
             .selectinload(Beat.events)
             .selectinload(Event.oracle_comments)
             .selectinload(OracleComment.author),
+            selectinload(Scene.beats).selectinload(Beat.comments).selectinload(BeatComment.author),
         )
     )
     return result.scalar_one_or_none()
@@ -917,6 +919,205 @@ async def challenge_beat(
                 message=f"{current_user.display_name} challenged a beat: {reason[:60]}",
                 link=scene_link,
             )
+
+    await db.commit()
+    return RedirectResponse(url=scene_link, status_code=303)
+
+
+@router.post("/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/accept")
+async def accept_challenge(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    beat_id: int,
+    content: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Beat author accepts a challenge by submitting revised content."""
+    scene = await _load_scene_for_view(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="Not a member of this game")
+
+    beat = next((b for b in scene.beats if b.id == beat_id), None)
+    if beat is None:
+        raise HTTPException(status_code=404, detail="Beat not found")
+
+    if beat.status not in (BeatStatus.challenged, BeatStatus.revised):
+        raise HTTPException(
+            status_code=400,
+            detail="Beat must be in challenged or revised status to accept/revise",
+        )
+    if beat.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the beat author can accept a challenge")
+
+    content = content.strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="Revised content is required")
+
+    # Replace all narrative events with the revised content
+    beat.events = [e for e in beat.events if e.type != EventType.narrative]
+    new_event = Event(
+        beat_id=beat.id,
+        type=EventType.narrative,
+        content=content,
+        order=1,
+    )
+    db.add(new_event)
+
+    # Clear challenge fields and re-enter approval as a major beat
+    beat.challenge_reason = None
+    beat.challenged_by_id = None
+    beat.status = BeatStatus.proposed
+    beat.significance = BeatSignificance.major
+
+    scene_link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
+    total_players = len(game.members)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=game.silence_timer_hours)
+    proposal = VoteProposal(
+        game_id=game.id,
+        proposal_type=ProposalType.beat_proposal,
+        proposed_by_id=current_user.id,
+        beat_id=beat.id,
+        expires_at=expires_at,
+    )
+    db.add(proposal)
+    await db.flush()
+    db.add(Vote(proposal_id=proposal.id, voter_id=current_user.id, choice=VoteChoice.yes))
+
+    if is_approved(1, total_players):
+        proposal.status = ProposalStatus.approved
+        beat.status = BeatStatus.canon
+    else:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.vote_required,
+            "Vote needed: revised beat submitted",
+            link=scene_link,
+            exclude_user_id=current_user.id,
+        )
+
+    await db.commit()
+    return RedirectResponse(url=scene_link, status_code=303)
+
+
+@router.post("/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/dismiss")
+async def dismiss_challenge(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    beat_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Beat author dismisses a challenge; beat returns to canon."""
+    scene = await _load_scene_for_view(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="Not a member of this game")
+
+    beat = next((b for b in scene.beats if b.id == beat_id), None)
+    if beat is None:
+        raise HTTPException(status_code=404, detail="Beat not found")
+
+    if beat.status != BeatStatus.challenged:
+        raise HTTPException(status_code=400, detail="Beat is not currently challenged")
+    if beat.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the beat author can dismiss a challenge")
+
+    challenger_id = beat.challenged_by_id
+    beat.status = BeatStatus.canon
+    beat.challenge_reason = None
+    beat.challenged_by_id = None
+
+    scene_link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
+
+    # Notify the challenger
+    if challenger_id is not None and challenger_id != current_user.id:
+        await create_notification(
+            db,
+            user_id=challenger_id,
+            game_id=game_id,
+            ntype=NotificationType.challenge_dismissed,
+            message=f"{current_user.display_name} dismissed your challenge — beat stands",
+            link=scene_link,
+        )
+
+    # Notify all other members
+    for member in game.members:
+        if member.user_id not in {current_user.id, challenger_id}:
+            await create_notification(
+                db,
+                user_id=member.user_id,
+                game_id=game_id,
+                ntype=NotificationType.challenge_dismissed,
+                message="A challenge was dismissed — beat stands as written",
+                link=scene_link,
+            )
+
+    await db.commit()
+    return RedirectResponse(url=scene_link, status_code=303)
+
+
+@router.post("/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/comments")
+async def add_beat_comment(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    beat_id: int,
+    content: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Any game member can post a comment on a challenged beat."""
+    scene = await _load_scene_for_view(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="Not a member of this game")
+
+    beat = next((b for b in scene.beats if b.id == beat_id), None)
+    if beat is None:
+        raise HTTPException(status_code=404, detail="Beat not found")
+
+    if beat.status != BeatStatus.challenged:
+        raise HTTPException(
+            status_code=400, detail="Comments can only be added to challenged beats"
+        )
+
+    content = content.strip()
+    if not content:
+        raise HTTPException(status_code=422, detail="Comment content is required")
+
+    comment = BeatComment(
+        beat_id=beat.id,
+        author_id=current_user.id,
+        content=content,
+    )
+    db.add(comment)
+
+    scene_link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
+
+    # Notify the beat author
+    if beat.author_id is not None and beat.author_id != current_user.id:
+        await create_notification(
+            db,
+            user_id=beat.author_id,
+            game_id=game_id,
+            ntype=NotificationType.beat_comment_added,
+            message=f"{current_user.display_name} commented on your challenged beat",
+            link=scene_link,
+        )
 
     await db.commit()
     return RedirectResponse(url=scene_link, status_code=303)

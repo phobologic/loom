@@ -1,7 +1,7 @@
 {% if beats %}
 <ol style="list-style:none; padding:0; margin:0;">
   {% for beat in beats %}
-  <li style="margin-bottom:1.25rem; padding:0.75rem; border:1px solid {% if beat.status.value in ['proposed', 'challenged'] %}#e8a020{% else %}#ddd{% endif %}; border-radius:4px; background:{% if beat.status.value == 'challenged' %}#fff8ee{% elif beat.status.value == 'proposed' %}#fffbf0{% else %}#fff{% endif %};">
+  <li style="margin-bottom:1.25rem; padding:0.75rem; border:1px solid {% if beat.status.value in ['proposed', 'challenged', 'revised'] %}#e8a020{% else %}#ddd{% endif %}; border-radius:4px; background:{% if beat.status.value == 'challenged' %}#fff8ee{% elif beat.status.value in ['proposed', 'revised'] %}#fffbf0{% else %}#fff{% endif %};">
     <div style="font-size:0.85rem; color:#555; margin-bottom:0.4rem;">
       <strong>{{ beat.author.display_name if beat.author else "Unknown" }}</strong>
       &middot; {{ beat.significance.value | capitalize }}
@@ -10,6 +10,8 @@
       <span style="color:#c07800; font-weight:bold;">[Pending vote]</span>
       {% elif beat.status.value == "challenged" %}
       <span style="color:#c04000; font-weight:bold;">[Challenged]</span>
+      {% elif beat.status.value == "revised" %}
+      <span style="color:#c07800; font-weight:bold;">[Revision required]</span>
       {% endif %}
     </div>
     {% if beat.status.value == "challenged" and beat.challenge_reason %}
@@ -18,6 +20,70 @@
       <em>{{ beat.challenge_reason }}</em>
     </p>
     {% endif %}
+    {% set is_beat_author = (current_user_id is defined and beat.author_id == current_user_id) %}
+    {% if beat.status.value == "challenged" %}
+    {# Comment thread #}
+    {% if beat.comments %}
+    <div style="margin:0.5rem 0 0.3rem; border-top:1px solid #e8c080; padding-top:0.4rem;">
+      <div style="font-size:0.78rem; color:#888; margin-bottom:0.25rem; text-transform:uppercase; letter-spacing:0.04em;">Discussion</div>
+      <ul style="margin:0; padding-left:1.1rem; font-size:0.83rem;">
+        {% for c in beat.comments %}
+        <li style="margin-bottom:0.2rem;">
+          <strong>{{ c.author.display_name if c.author else "Anonymous" }}:</strong> {{ c.content }}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {# Comment form (all members) #}
+    <form method="post" action="/games/{{ game.id }}/acts/{{ scene.act_id }}/scenes/{{ scene.id }}/beats/{{ beat.id }}/comments"
+        style="margin-top:0.35rem;">
+      <input type="text" name="content" placeholder="Add a comment on this challenge…" required
+        style="width:100%; max-width:28rem; font-size:0.82rem; box-sizing:border-box;">
+      <button type="submit" style="font-size:0.82rem; margin-top:0.2rem;">Comment</button>
+    </form>
+    {# Accept / dismiss actions (beat author only) #}
+    {% if is_beat_author %}
+    <div style="margin-top:0.6rem; padding:0.5rem 0.75rem; border:1px solid #c04000; border-radius:4px; background:#fff0ec;">
+      <p style="margin:0 0 0.4rem; font-size:0.85rem; font-weight:bold; color:#c04000;">You can accept this concern and revise your beat, or dismiss it.</p>
+      <details style="margin-bottom:0.4rem;">
+        <summary style="font-size:0.83rem; cursor:pointer;">Accept &amp; revise</summary>
+        <form method="post" action="/games/{{ game.id }}/acts/{{ scene.act_id }}/scenes/{{ scene.id }}/beats/{{ beat.id }}/challenge/accept"
+            style="margin-top:0.3rem;">
+          <textarea name="content" rows="3" required
+            style="width:100%; max-width:32rem; font-size:0.85rem; box-sizing:border-box;"
+            placeholder="Enter revised beat content…"></textarea>
+          <button type="submit" style="margin-top:0.3rem; font-size:0.83rem;">Submit revision for vote</button>
+        </form>
+      </details>
+      <form method="post" action="/games/{{ game.id }}/acts/{{ scene.act_id }}/scenes/{{ scene.id }}/beats/{{ beat.id }}/challenge/dismiss">
+        <button type="submit" style="font-size:0.83rem; background:#fff0ec; border:1px solid #c04000;">
+          Dismiss — beat stands as written
+        </button>
+      </form>
+    </div>
+    {% else %}
+    <p style="font-size:0.83rem; color:#888; margin:0.3rem 0 0; font-style:italic;">Awaiting author's response.</p>
+    {% endif %}
+    {% endif %}{# end challenged #}
+    {# Revision required: author submits new content #}
+    {% if beat.status.value == "revised" %}
+    {% if is_beat_author %}
+    <div style="margin-top:0.6rem; padding:0.5rem 0.75rem; border:1px solid #e8a020; border-radius:4px; background:#fffbf0;">
+      <p style="margin:0 0 0.4rem; font-size:0.85rem; font-weight:bold; color:#c07800;">
+        This beat needs a revision before it can re-enter the approval flow.
+      </p>
+      <form method="post" action="/games/{{ game.id }}/acts/{{ scene.act_id }}/scenes/{{ scene.id }}/beats/{{ beat.id }}/challenge/accept">
+        <textarea name="content" rows="3" required
+          style="width:100%; max-width:32rem; font-size:0.85rem; box-sizing:border-box;"
+          placeholder="Enter revised beat content…"></textarea>
+        <button type="submit" style="margin-top:0.3rem; font-size:0.83rem;">Submit revision for vote</button>
+      </form>
+    </div>
+    {% else %}
+    <p style="font-size:0.83rem; color:#c07800; margin:0.3rem 0 0; font-style:italic;">Awaiting author revision.</p>
+    {% endif %}
+    {% endif %}{# end revised #}
     {% for event in beat.events %}
     <div style="margin-top:0.4rem; padding:0.3rem 0.5rem; border-left:3px solid {% if event.type.value == 'ooc' %}#999{% else %}#4a7fc1{% endif %}; background:{% if event.type.value == 'ooc' %}#f5f5f5{% else %}#f8fbff{% endif %};">
       <span style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:0.05em;">{{ event.type.value | replace("_", " ") }}</span>

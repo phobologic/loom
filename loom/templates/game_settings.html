@@ -40,7 +40,6 @@
     <select id="tie_breaking_method" name="tie_breaking_method">
         <option value="random" {% if game.tie_breaking_method.value == "random" %}selected{% endif %}>Random / die roll</option>
         <option value="proposer" {% if game.tie_breaking_method.value == "proposer" %}selected{% endif %}>Proposer decides</option>
-        <option value="challenger" {% if game.tie_breaking_method.value == "challenger" %}selected{% endif %}>Challenger decides</option>
     </select>
 </div>
 

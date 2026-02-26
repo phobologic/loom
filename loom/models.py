@@ -89,11 +89,10 @@ class EventType(str, enum.Enum):
 
 
 class TieBreakingMethod(str, enum.Enum):
-    """How tied votes on a major beat are resolved."""
+    """How tied oracle interpretation votes are resolved."""
 
     random = "random"
     proposer = "proposer"
-    challenger = "challenger"
 
 
 class OracleType(str, enum.Enum):
@@ -175,6 +174,9 @@ class NotificationType(str, enum.Enum):
     fortune_roll_contested = "fortune_roll_contested"
     act_proposed = "act_proposed"
     scene_proposed = "scene_proposed"
+    challenge_dismissed = "challenge_dismissed"
+    beat_revised = "beat_revised"
+    beat_comment_added = "beat_comment_added"
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +437,27 @@ class Beat(TimestampMixin, Base):
         cascade="all, delete-orphan",
         order_by="Event.order",
     )
+    comments: Mapped[list[BeatComment]] = relationship(
+        back_populates="beat",
+        cascade="all, delete-orphan",
+        order_by="BeatComment.created_at",
+    )
+
+
+class BeatComment(TimestampMixin, Base):
+    """A discussion comment on a challenged beat."""
+
+    __tablename__ = "beat_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    beat_id: Mapped[int] = mapped_column(ForeignKey("beats.id", ondelete="CASCADE"), nullable=False)
+    author_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    beat: Mapped[Beat] = relationship(back_populates="comments")
+    author: Mapped[User | None] = relationship()
 
 
 class Event(TimestampMixin, Base):

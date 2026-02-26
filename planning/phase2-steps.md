@@ -60,9 +60,11 @@ Any player can challenge a canon beat. They provide a reason (fictional inconsis
 
 ### Step 31: Challenge System - Resolution
 
-The original author can accept the challenge and revise the beat, or disagree, in which case it goes to a group vote. If the vote says revise, the beat re-enters the proposed state and goes through approval again. Tie-breaking follows game settings.
+The beat author sees the challenge reason and can either accept it (submit revised content → beat re-enters approval as a major beat) or dismiss it (beat returns to canon, challenger and members notified). Any player can post a comment on the challenged beat to discuss the concern — the author reads the discussion and decides. No group vote; no forced changes; author has final say on their own canon content.
 
-**Requirements:** REQ-CHALLENGE-002
+Adds: `BeatComment` model, accept/dismiss endpoints, comment thread on challenged beats in the scene timeline. Also removes `TieBreakingMethod.challenger` (dead code after removing the challenge vote system that it was designed for).
+
+**Requirements:** REQ-CHALLENGE-002, REQ-CHALLENGE-003
 
 ---
 

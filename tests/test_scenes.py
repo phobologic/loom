@@ -14,6 +14,7 @@ from loom.models import (
     Act,
     ActStatus,
     Beat,
+    BeatComment,
     BeatStatus,
     Character,
     EventType,
@@ -1568,4 +1569,359 @@ class TestChallengeBeat:
         assert not any(
             n.notification_type == NotificationType.beat_challenged and "your beat" in n.message
             for n in notifications
+        )
+
+
+# ---------------------------------------------------------------------------
+# Challenge resolution
+# ---------------------------------------------------------------------------
+
+
+async def _get_beat_comments(beat_id: int) -> list[BeatComment]:
+    async with _test_session_factory() as db:
+        result = await db.execute(select(BeatComment).where(BeatComment.beat_id == beat_id))
+        return list(result.scalars().all())
+
+
+async def _challenge_beat(
+    client: AsyncClient,
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    beat_id: int,
+    challenger_user_id: int,
+    reason: str = "This contradicts the established lore.",
+) -> None:
+    """Helper: log in as challenger and file a challenge."""
+    await _login(client, challenger_user_id)
+    await client.post(
+        f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge",
+        data={"reason": reason},
+        follow_redirects=False,
+    )
+
+
+@pytest.mark.anyio
+class TestChallengeResolution:
+    async def test_author_can_accept_challenge(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("The hero enters the tavern."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        await _login(client, 1)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/accept",
+            data={"content": "The hero slips quietly into the tavern."},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+        beats = await _get_beats(scene_id)
+        assert beats[0].status == BeatStatus.proposed
+        assert beats[0].challenge_reason is None
+        assert beats[0].challenged_by_id is None
+
+    async def test_accept_replaces_narrative_events(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Original content."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/accept",
+            data={"content": "Revised content."},
+            follow_redirects=False,
+        )
+
+        beats = await _get_beats(scene_id)
+        narrative_events = [e for e in beats[0].events if e.type == EventType.narrative]
+        assert len(narrative_events) == 1
+        assert narrative_events[0].content == "Revised content."
+
+    async def test_accept_creates_beat_proposal(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Some event."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/accept",
+            data={"content": "Revised event."},
+            follow_redirects=False,
+        )
+
+        proposals = await _get_proposals(game_id)
+        beat_proposals = [
+            p
+            for p in proposals
+            if p.proposal_type == ProposalType.beat_proposal and p.beat_id == beat_id
+        ]
+        assert len(beat_proposals) == 1
+        assert beat_proposals[0].status == ProposalStatus.open
+
+    async def test_accept_single_player_auto_approves(self, client: AsyncClient) -> None:
+        # Single-player: author's implicit yes (1/1) exceeds threshold → auto-canon.
+        game_id = await _create_active_game(client)
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Something happened."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        # Author challenges their own beat
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge",
+            data={"reason": "I changed my mind."},
+            follow_redirects=False,
+        )
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/accept",
+            data={"content": "Better version."},
+            follow_redirects=False,
+        )
+
+        beats = await _get_beats(scene_id)
+        assert beats[0].status == BeatStatus.canon
+
+    async def test_non_author_cannot_accept(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Something."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        # Challenger tries to accept (should fail)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/accept",
+            data={"content": "Changed by challenger."},
+            follow_redirects=False,
+        )
+        assert r.status_code == 403
+
+    async def test_author_can_dismiss_challenge(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("The beat stands."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        await _login(client, 1)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/dismiss",
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+        beats = await _get_beats(scene_id)
+        assert beats[0].status == BeatStatus.canon
+        assert beats[0].challenge_reason is None
+        assert beats[0].challenged_by_id is None
+
+    async def test_non_author_cannot_dismiss(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Something."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        # Challenger tries to dismiss (should fail)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/dismiss",
+            follow_redirects=False,
+        )
+        assert r.status_code == 403
+
+    async def test_dismiss_notifies_challenger(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("The beat stands."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/challenge/dismiss",
+            follow_redirects=False,
+        )
+
+        notifications = await _get_notifications(user_id=2)
+        assert any(
+            n.notification_type == NotificationType.challenge_dismissed for n in notifications
+        )
+
+    async def test_any_member_can_comment(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Something happens."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/comments",
+            data={"content": "I think this is fine actually."},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+        comments = await _get_beat_comments(beat_id)
+        assert len(comments) == 1
+        assert comments[0].content == "I think this is fine actually."
+
+    async def test_non_member_cannot_comment(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Something."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        await _login(client, 3)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/comments",
+            data={"content": "I'm not in this game."},
+            follow_redirects=False,
+        )
+        assert r.status_code == 403
+
+    async def test_comment_on_non_challenged_beat_rejected(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("A canon beat."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+        assert beats[0].status == BeatStatus.canon
+
+        await _login(client, 2)
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/comments",
+            data={"content": "Just commenting."},
+            follow_redirects=False,
+        )
+        assert r.status_code == 400
+
+    async def test_comment_notifies_beat_author(self, client: AsyncClient) -> None:
+        game_id = await _create_active_game(client, extra_members=[2])
+        act_id = await _create_active_act(game_id)
+        scene_id = await _create_active_scene(act_id, game_id)
+
+        await _login(client, 1)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("A beat by user 1."),
+            follow_redirects=False,
+        )
+        beats = await _get_beats(scene_id)
+        beat_id = beats[0].id
+
+        await _challenge_beat(client, game_id, act_id, scene_id, beat_id, challenger_user_id=2)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/comments",
+            data={"content": "Here's my suggestion."},
+            follow_redirects=False,
+        )
+
+        notifications = await _get_notifications(user_id=1)
+        assert any(
+            n.notification_type == NotificationType.beat_comment_added for n in notifications
         )
