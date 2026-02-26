@@ -105,6 +105,82 @@
   {% endif %}
 </section>
 
+{% if tension_adj_proposal %}
+<section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2>Tension Adjustment</h2>
+  <p>
+    <strong>AI recommendation:</strong>
+    {% if tension_adj_proposal.tension_delta == 1 %}
+      +1 — Escalate
+    {% elif tension_adj_proposal.tension_delta == -1 %}
+      -1 — Ease tension
+    {% else %}
+      0 — Hold steady
+    {% endif %}
+  </p>
+  <blockquote style="margin:0.75rem 0; padding:0.5rem 1rem; border-left:3px solid #ccc; color:#444; font-style:italic;">
+    {{ tension_adj_proposal.ai_rationale }}
+  </blockquote>
+  <p>
+    <strong>Current tension:</strong>
+    <span style="font-weight:bold; color:{% if scene.tension >= 7 %}#c04000{% elif scene.tension >= 4 %}#c07800{% else %}#2a7a2a{% endif %};">
+      {{ scene.tension }}
+    </span>
+    / 9
+    &nbsp;&rarr;&nbsp;
+    <strong>If accepted:</strong>
+    <span style="font-weight:bold; color:{% if ta_proposed_tension >= 7 %}#c04000{% elif ta_proposed_tension >= 4 %}#c07800{% else %}#2a7a2a{% endif %};">
+      {{ ta_proposed_tension }}
+    </span>
+    / 9
+  </p>
+  <p>
+    <strong>Votes:</strong>
+    {{ ta_yes_count }} escalate (+1) &middot;
+    {{ ta_suggest_count }} hold steady (0) &middot;
+    {{ ta_no_count }} ease (-1)
+    &nbsp;({{ total_players }} player{{ "s" if total_players != 1 else "" }} total —
+    plurality wins; tie or no votes → AI suggestion applies)
+  </p>
+  {% if tension_adj_proposal.votes %}
+  <ul>
+    {% for v in tension_adj_proposal.votes %}
+    <li>
+      <strong>{{ v.voter.display_name if v.voter else "Unknown" }}:</strong>
+      {% if v.choice.value == "yes" %}+1 (Escalate)
+      {% elif v.choice.value == "no" %}-1 (Ease tension)
+      {% else %}0 (Hold steady){% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if not ta_my_vote %}
+  <form method="post" action="/games/{{ game.id }}/proposals/{{ tension_adj_proposal.id }}/vote"
+        style="margin-top:0.75rem;">
+    <fieldset>
+      <legend><strong>Your vote on tension for the next scene:</strong></legend>
+      <label style="display:block; margin:0.4rem 0;">
+        <input type="radio" name="choice" value="yes" required> +1 Escalate
+      </label>
+      <label style="display:block; margin:0.4rem 0;">
+        <input type="radio" name="choice" value="suggest_modification"> 0 Hold steady
+      </label>
+      <label style="display:block; margin:0.4rem 0;">
+        <input type="radio" name="choice" value="no"> -1 Ease tension
+      </label>
+      <button type="submit" style="margin-top:0.5rem;">Submit vote</button>
+    </fieldset>
+  </form>
+  {% else %}
+  <p>Your vote: <strong>
+    {% if ta_my_vote.choice.value == "yes" %}+1 (Escalate)
+    {% elif ta_my_vote.choice.value == "no" %}-1 (Ease tension)
+    {% else %}0 (Hold steady){% endif %}
+  </strong></p>
+  {% endif %}
+</section>
+{% endif %}
+
 <section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
   <h2>Submit a Beat</h2>
   {% if scene.status.value == "active" %}

@@ -42,7 +42,7 @@ from loom.models import (
 )
 from loom.notifications import create_notification, notify_game_members
 from loom.rendering import templates
-from loom.voting import activate_scene, approval_threshold, is_approved
+from loom.voting import activate_scene, approval_threshold, is_approved, resolve_tension_vote
 
 _IC_EVENT_TYPES = {"narrative", "roll", "oracle", "fortune_roll"}
 _OOC_EVENT_TYPES = {"ooc"}
@@ -610,6 +610,55 @@ async def scene_detail(
 
     total_players = len(game.members)
 
+    # Tension adjustment proposal for this scene (open or awaiting expiry)
+    tension_adj_proposal = next(
+        (
+            p
+            for p in game.proposals
+            if p.status == ProposalStatus.open
+            and p.proposal_type == ProposalType.tension_adjustment
+            and p.scene_id == scene.id
+        ),
+        None,
+    )
+
+    # Lazy expiry: if the proposal window has closed with no full quorum, resolve now
+    if (
+        tension_adj_proposal is not None
+        and tension_adj_proposal.expires_at is not None
+        and tension_adj_proposal.expires_at.replace(tzinfo=None) < now
+    ):
+        yes_count = sum(1 for v in tension_adj_proposal.votes if v.choice == VoteChoice.yes)
+        suggest_count = sum(
+            1 for v in tension_adj_proposal.votes if v.choice == VoteChoice.suggest_modification
+        )
+        no_count = sum(1 for v in tension_adj_proposal.votes if v.choice == VoteChoice.no)
+        delta = resolve_tension_vote(
+            yes_count, suggest_count, no_count, tension_adj_proposal.tension_delta or 0
+        )
+        scene.tension = max(1, min(9, scene.tension + delta))
+        tension_adj_proposal.status = ProposalStatus.approved
+        await db.commit()
+        tension_adj_proposal = None  # resolved — hide from template
+
+    ta_my_vote = None
+    ta_yes_count = ta_suggest_count = ta_no_count = 0
+    if tension_adj_proposal is not None:
+        ta_my_vote = next(
+            (v for v in tension_adj_proposal.votes if v.voter_id == current_user.id), None
+        )
+        ta_yes_count = sum(1 for v in tension_adj_proposal.votes if v.choice == VoteChoice.yes)
+        ta_suggest_count = sum(
+            1 for v in tension_adj_proposal.votes if v.choice == VoteChoice.suggest_modification
+        )
+        ta_no_count = sum(1 for v in tension_adj_proposal.votes if v.choice == VoteChoice.no)
+
+    ta_proposed_tension = (
+        max(1, min(9, scene.tension + (tension_adj_proposal.tension_delta or 0)))
+        if tension_adj_proposal is not None
+        else None
+    )
+
     return templates.TemplateResponse(
         request,
         "scene_detail.html",
@@ -633,6 +682,12 @@ async def scene_detail(
             "sc_no_count": sc_no_count,
             "sc_suggest_count": sc_suggest_count,
             "threshold": approval_threshold(total_players),
+            "tension_adj_proposal": tension_adj_proposal,
+            "ta_my_vote": ta_my_vote,
+            "ta_yes_count": ta_yes_count,
+            "ta_suggest_count": ta_suggest_count,
+            "ta_no_count": ta_no_count,
+            "ta_proposed_tension": ta_proposed_tension,
         },
     )
 

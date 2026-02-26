@@ -1,6 +1,6 @@
 ---
 id: loo-gmld
-status: open
+status: closed
 deps: [loo-ks3o]
 links: []
 created: 2026-02-26T05:19:32Z

@@ -18,6 +18,36 @@ def is_approved(yes_count: int, total_players: int) -> bool:
     return yes_count > approval_threshold(total_players)
 
 
+def resolve_tension_vote(
+    yes_count: int,
+    suggest_count: int,
+    no_count: int,
+    ai_delta: int,
+) -> int:
+    """Resolve a tension adjustment vote by plurality.
+
+    VoteChoice mapping: yes → +1, suggest_modification → 0, no → -1.
+    Returns the winning delta. AI delta breaks ties and applies if no votes cast.
+
+    Args:
+        yes_count: Number of votes for +1 (escalate).
+        suggest_count: Number of votes for 0 (hold steady).
+        no_count: Number of votes for -1 (ease tension).
+        ai_delta: The AI's recommended delta, used as tiebreaker and default.
+
+    Returns:
+        The resolved tension delta (-1, 0, or +1).
+    """
+    counts = {1: yes_count, 0: suggest_count, -1: no_count}
+    if all(v == 0 for v in counts.values()):
+        return ai_delta  # no votes cast → AI suggestion wins
+    max_count = max(counts.values())
+    winners = [delta for delta, count in counts.items() if count == max_count]
+    if len(winners) == 1:
+        return winners[0]
+    return ai_delta  # tie → AI suggestion wins
+
+
 def activate_act(acts: list[Act], new_act: Act) -> None:
     """Complete any currently active act and set new_act to active.
 

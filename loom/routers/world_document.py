@@ -12,18 +12,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
-from loom.ai.client import generate_world_document as _ai_generate_world_document
+from loom.ai.client import (
+    evaluate_tension_adjustment,
+)
+from loom.ai.client import (
+    generate_world_document as _ai_generate_world_document,
+)
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
     Act,
     ActStatus,
+    Beat,
     BeatStatus,
     Game,
     GameMember,
     GameStatus,
     ProposalStatus,
     ProposalType,
+    Scene,
     SceneStatus,
     Session0Prompt,
     User,
@@ -33,7 +40,13 @@ from loom.models import (
     WorldDocument,
 )
 from loom.rendering import templates
-from loom.voting import activate_act, activate_scene, approval_threshold, is_approved
+from loom.voting import (
+    activate_act,
+    activate_scene,
+    approval_threshold,
+    is_approved,
+    resolve_tension_vote,
+)
 
 router = APIRouter()
 
@@ -80,6 +93,7 @@ async def _load_game_for_voting(game_id: int, db: AsyncSession) -> Game | None:
             selectinload(Game.acts).selectinload(Act.scenes),
             selectinload(Game.session0_prompts).selectinload(Session0Prompt.responses),
             selectinload(Game.world_document),
+            selectinload(Game.safety_tools),
             selectinload(Game.proposals).selectinload(VoteProposal.votes).selectinload(Vote.voter),
             selectinload(Game.proposals).selectinload(VoteProposal.proposed_by),
             selectinload(Game.proposals).selectinload(VoteProposal.act),
@@ -88,6 +102,101 @@ async def _load_game_for_voting(game_id: int, db: AsyncSession) -> Game | None:
         )
     )
     return result.scalar_one_or_none()
+
+
+def _resolve_tension_proposal(proposal: VoteProposal) -> None:
+    """Apply plurality vote result to scene.tension and mark proposal approved.
+
+    VoteChoice mapping for tension: yes → +1, suggest_modification → 0, no → -1.
+    AI suggestion is used as tiebreaker and default when no votes were cast.
+    """
+    if proposal.scene is None:
+        return
+    yes_count = sum(1 for v in proposal.votes if v.choice == VoteChoice.yes)
+    suggest_count = sum(1 for v in proposal.votes if v.choice == VoteChoice.suggest_modification)
+    no_count = sum(1 for v in proposal.votes if v.choice == VoteChoice.no)
+    delta = resolve_tension_vote(yes_count, suggest_count, no_count, proposal.tension_delta or 0)
+    proposal.scene.tension = max(1, min(9, proposal.scene.tension + delta))
+    proposal.status = ProposalStatus.approved
+
+
+async def _create_tension_adjustment_proposal(
+    scene: Scene,
+    game: Game,
+    db: AsyncSession,
+) -> None:
+    """Evaluate tension after scene completion and open a tension_adjustment proposal.
+
+    For single-player games, applies the AI suggestion immediately without a vote.
+    AI failure is caught and swallowed — scene completion is never rolled back.
+    """
+    total_players = len(game.members)
+
+    # Load full scene with beats and characters for AI context assembly
+    result = await db.execute(
+        select(Scene)
+        .where(Scene.id == scene.id)
+        .options(
+            selectinload(Scene.act),
+            selectinload(Scene.beats).selectinload(Beat.events),
+            selectinload(Scene.characters_present),
+        )
+    )
+    full_scene = result.scalar_one_or_none()
+    if full_scene is None:
+        return
+
+    # Build recent scene history: last 3 completed scenes in the same act
+    act_in_game = next((a for a in game.acts if a.id == full_scene.act_id), None)
+    recent_history: list[tuple[int, str | None]] = []
+    if act_in_game is not None:
+        completed_prior = sorted(
+            [
+                s
+                for s in act_in_game.scenes
+                if s.status == SceneStatus.complete and s.id != scene.id
+            ],
+            key=lambda s: s.order,
+        )[-3:]
+        # Find rationale from resolved tension proposals for those scenes
+        resolved_tension = {
+            p.scene_id: p.ai_rationale
+            for p in game.proposals
+            if p.proposal_type == ProposalType.tension_adjustment
+            and p.status == ProposalStatus.approved
+            and p.scene_id is not None
+        }
+        for s in completed_prior:
+            recent_history.append((s.tension, resolved_tension.get(s.id)))
+
+    try:
+        delta, rationale = await evaluate_tension_adjustment(
+            game,
+            full_scene,
+            recent_history,
+            db=db,
+            game_id=game.id,
+        )
+    except Exception:
+        # AI failure must not abort scene completion
+        return
+
+    if total_players == 1:
+        # Single-player: apply immediately, no vote
+        scene.tension = max(1, min(9, scene.tension + delta))
+        return
+
+    tension_proposal = VoteProposal(
+        game_id=game.id,
+        proposal_type=ProposalType.tension_adjustment,
+        proposed_by_id=None,
+        scene_id=scene.id,
+        tension_delta=delta,
+        ai_rationale=rationale,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=game.silence_timer_hours),
+    )
+    db.add(tension_proposal)
+    await db.flush()
 
 
 async def create_world_doc_and_proposal(
@@ -314,11 +423,20 @@ async def cast_vote(
             proposal.beat.status = BeatStatus.canon
         elif proposal.proposal_type == ProposalType.scene_complete and proposal.scene is not None:
             proposal.scene.status = SceneStatus.complete
+            await _create_tension_adjustment_proposal(proposal.scene, game, db)
         elif proposal.proposal_type == ProposalType.act_complete and proposal.act is not None:
             proposal.act.status = ActStatus.complete
             for scene in proposal.act.scenes:
                 if scene.status == SceneStatus.active:
                     scene.status = SceneStatus.complete
+
+    # Tension adjustment: resolve by plurality once all players have voted
+    if (
+        proposal.proposal_type == ProposalType.tension_adjustment
+        and proposal.status == ProposalStatus.open
+        and len(proposal.votes) >= total_players
+    ):
+        _resolve_tension_proposal(proposal)
 
     await db.commit()
 
@@ -336,6 +454,11 @@ async def cast_vote(
             return RedirectResponse(
                 url=f"/games/{game_id}/acts/{act.id}/scenes/{scene_id}", status_code=303
             )
+    if proposal.proposal_type == ProposalType.tension_adjustment and proposal.scene is not None:
+        scene = proposal.scene
+        return RedirectResponse(
+            url=f"/games/{game_id}/acts/{scene.act_id}/scenes/{scene.id}", status_code=303
+        )
     if proposal.proposal_type == ProposalType.scene_complete and proposal.scene is not None:
         scene = proposal.scene
         return RedirectResponse(

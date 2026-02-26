@@ -158,3 +158,12 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 **Actions:** Alice navigates to the scenes list for the act (`/games/{id}/acts/{act_id}/scenes`). Clicks "Propose Act Completion". In a single-player game, auto-approves. In a multi-player game, second player votes yes.
 **Pass criteria:** Act status shows "Complete" on acts page. Scenes page for the completed act remains accessible (HTTP 200). "Propose a New Scene" form is no longer visible.
 **Severity if broken:** P1
+
+---
+
+## 18. Tension adjustment on scene completion
+
+**Preconditions:** Scene has just been completed (workflow 16 done). In a multi-player game, all members present.
+**Actions:** After scene completion vote passes, navigate to the scene detail page. Observe the "Tension Adjustment" section with the AI's recommendation (+1/-1/0) and rationale explaining scene-level and arc-level reasoning. In a single-player game, tension adjusts automatically (no voting section). In a multi-player game, each player votes +1 (Escalate), 0 (Hold steady), or -1 (Ease tension). After all players have voted, reload the page.
+**Pass criteria:** After all votes — the tension adjustment section disappears (proposal resolved). The scene's tension value reflects the plurality delta (clamped 1-9). The adjusted tension appears as the default on the next scene proposal form. If the expiry window passes with no votes, the AI suggestion is applied automatically. Single-player: tension auto-adjusts immediately after scene completion, no vote UI shown.
+**Severity if broken:** P2

@@ -496,8 +496,12 @@ Game (settings, world document, members, active word seed tables)
 *Requirement:* When a scene is completed, Loom shall propose a Tension adjustment based on what happened during the scene.
 *Acceptance Criteria:*
 - The AI evaluates the completed scene and proposes whether tension should increase (things spiraled, plans failed, new threats emerged, surprises dominated), decrease (players achieved their goals, resolved tensions, maintained control), or stay the same (mixed results, roughly balanced).
-- The proposal is shown to all players with a brief explanation (e.g., "The security patrol, the data core crash, and the unresolved mystery of Deck 0 all point toward rising tension. Suggested adjustment: Tension +1, from 5 to 6.").
-- Players can accept the suggestion or override it via a quick vote.
+- The AI also considers the recent narrative arc (sustained low or high tension across multiple scenes) and the tension feedback loop (low tension biases fortune rolls favorably, which can perpetuate low-tension play). These arc-level factors can influence the recommendation even when the scene outcome alone is ambiguous.
+- The AI applies an extreme-value correction: if tension is already 8 or above, it biases toward -1 unless the scene was clearly escalating; if tension is 3 or below, it biases toward +1 unless the scene was clearly resolving.
+- The AI's proposal is shown to all players with a transparent explanation that explicitly names which factors (scene outcome, arc, feedback loop, extreme correction) drove the recommendation (e.g., "The security patrol, the data core crash, and the unresolved mystery of Deck 0 all point toward rising tension. Suggested adjustment: Tension +1, from 5 to 6.").
+- Players each vote their own preferred delta (+1, 0, or -1) after reading the AI's reasoning. The plurality delta wins. If votes are tied or no one votes, the AI's suggestion is used.
+- If no vote is cast within the game's silence timer window, the AI's suggestion is applied automatically.
+- In single-player games, the AI's suggestion is applied immediately without a vote.
 - The adjustment is always exactly +1, -1, or 0 - no larger jumps.
 - The Tension cannot go below 1 or above 9.
 

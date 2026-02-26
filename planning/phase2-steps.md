@@ -34,7 +34,9 @@ Implemented here, before the AI-heavy Phase 2 steps, so all subsequent features 
 
 ### Step 28: Tension Adjustment on Scene Completion
 
-When a scene completes, the AI evaluates what happened and proposes whether tension should go up 1, down 1, or stay the same, with a brief explanation. Players can accept or override via quick vote. The adjustment is always exactly +/-1 or 0, clamped to 1-9. The new tension carries forward to the next scene.
+When a scene completes, the AI evaluates what happened and proposes whether tension should go up 1, down 1, or stay the same, with a transparent explanation. The AI accounts for scene outcome, recent narrative arc (sustained low/high tension), the fortune-roll feedback loop (low tension biases rolls favorably), and extreme-value correction (bias toward center when tension is already very high or very low).
+
+Players each vote their own preferred delta (+1, 0, -1) after reading the AI's reasoning — not just accept/reject. Plurality wins; ties and abstentions fall back to the AI's suggestion. Proposals expire after the game's silence timer window; the AI suggestion is applied automatically if no votes are cast. Single-player games skip the vote and auto-apply. The adjustment is clamped to 1-9 and carries forward to the next scene via existing logic.
 
 **Requirements:** REQ-TENSION-002
 

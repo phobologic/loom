@@ -22,6 +22,7 @@ from loom.ai.schemas import (
     BeatClassification,
     OracleResponse,
     SynthesisResponse,
+    TensionAdjustmentResponse,
     WorldDocumentResponse,
 )
 from loom.config import settings
@@ -282,3 +283,93 @@ async def classify_beat_significance(
         )
 
     return response.significance
+
+
+async def evaluate_tension_adjustment(
+    game: Game,
+    scene: Scene,
+    recent_scene_history: list[tuple[int, str | None]],
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> tuple[int, str]:
+    """Evaluate a completed scene and propose a tension adjustment.
+
+    Args:
+        game: Fully loaded game (world_document, safety_tools, members loaded).
+        scene: Just-completed scene (beats with events loaded).
+        recent_scene_history: List of (tension, ai_rationale) for the last few
+            completed scenes in the act (oldest first), for arc-level context.
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        (delta, rationale) — delta is -1, 0, or +1; rationale is player-facing text
+        that names which factors drove the recommendation.
+    """
+    system = (
+        "You are a narrative pacing evaluator for a collaborative tabletop RPG. "
+        "Analyze the completed scene and recommend a tension adjustment (+1, -1, or 0). "
+        "Be fully transparent in your rationale about which factors drove the choice."
+    )
+
+    prompt_parts: list[str] = []
+    context_comps: list[str] | None = None
+
+    context_block = assemble_scene_context(
+        game, scene, beat_history_window=settings.ai_context_beat_history_window
+    )
+    if context_block:
+        prompt_parts.append(context_block)
+    context_comps = scene_context_components(game, scene)
+
+    if recent_scene_history:
+        history_lines = ["## Recent scene history (oldest first)"]
+        for i, (t, rationale) in enumerate(recent_scene_history, 1):
+            line = f"Scene -{len(recent_scene_history) - i + 1}: tension={t}"
+            if rationale:
+                line += f" — {rationale}"
+            history_lines.append(line)
+        prompt_parts.append("\n".join(history_lines))
+        context_comps = (context_comps or []) + ["recent_scene_history"]
+
+    current_tension = scene.tension
+    prompt_parts.append(
+        f"## Tension evaluation task\n"
+        f"Current tension: {current_tension}/9. The scene above has just completed.\n\n"
+        f"Evaluate the tension adjustment using these factors in order:\n\n"
+        f"1. SCENE OUTCOME: Did stakes rise (plans failed, new threats, unresolved surprises → +1) "
+        f"or fall (goals achieved, conflict resolved, characters in control → -1)? "
+        f"Mixed or ambiguous → 0.\n\n"
+        f"2. NARRATIVE ARC: Based on the recent scene history above — "
+        f"if tension has been low (≤3) for multiple scenes, lean toward +1 even on neutral scenes. "
+        f"If tension has been high (≥7) for multiple scenes, lean toward -1 for a breather.\n\n"
+        f"3. FEEDBACK LOOP: Low tension makes fortune rolls more favorable, which tends to keep "
+        f"tension low. If tension is already low and the scene outcome is ambiguous, consider "
+        f"recommending +1 to prevent narrative stagnation.\n\n"
+        f"4. EXTREME CORRECTION: If current tension ≥ 8, prefer -1 unless the scene was clearly "
+        f"escalating. If current tension ≤ 3, prefer +1 unless the scene was clearly resolving.\n\n"
+        f"In your rationale, explicitly name which factor(s) drove your recommendation. "
+        f"Write 2-4 sentences addressed directly to the players. They will read this before voting."
+    )
+
+    model = settings.ai_model_classification
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt="\n\n".join(prompt_parts),
+        model=model,
+        max_tokens=400,
+        response_model=TensionAdjustmentResponse,
+    )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="evaluate_tension_adjustment",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
+    return response.delta, response.rationale

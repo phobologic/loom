@@ -137,6 +137,7 @@ class ProposalType(str, enum.Enum):
     beat_proposal = "beat_proposal"
     scene_complete = "scene_complete"
     act_complete = "act_complete"
+    tension_adjustment = "tension_adjustment"
 
 
 class ProposalStatus(str, enum.Enum):
@@ -615,6 +616,8 @@ class VoteProposal(TimestampMixin, Base):
         ForeignKey("beats.id", ondelete="SET NULL"), nullable=True
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    tension_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ai_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="proposals")
     proposed_by: Mapped[User | None] = relationship(foreign_keys=[proposed_by_id])

@@ -49,3 +49,23 @@ class WorldDocumentResponse(BaseModel):
             "Be concrete and usable at the table."
         ),
     )
+
+
+class TensionAdjustmentResponse(BaseModel):
+    delta: Literal[-1, 0, 1] = Field(
+        description=(
+            "-1 if the scene resolved tension "
+            "(conflict defused, goals achieved, characters in control); "
+            "+1 if the scene escalated tension "
+            "(plans failed, new threats emerged, surprises dominated); "
+            "0 if results were mixed or ambiguous."
+        ),
+    )
+    rationale: str = Field(
+        description=(
+            "Player-facing explanation of the recommendation in 2-4 sentences. "
+            "Be transparent about which factors drove the choice: scene outcome, "
+            "recent narrative arc, fortune-roll feedback loop, or extreme tension correction. "
+            "Write as if addressing the players directly."
+        ),
+    )
