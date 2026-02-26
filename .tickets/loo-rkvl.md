@@ -1,6 +1,6 @@
 ---
 id: loo-rkvl
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-25T01:22:40Z
