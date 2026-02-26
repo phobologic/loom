@@ -9,7 +9,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.orm import selectinload
 
 from loom.database import Base, get_db
 from loom.fortune_roll import (
@@ -27,8 +26,6 @@ from loom.models import (
     BeatStatus,
     Event,
     EventType,
-    Game,
-    GameStatus,
     ProposalType,
     Scene,
     SceneStatus,

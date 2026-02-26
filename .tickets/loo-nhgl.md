@@ -1,6 +1,6 @@
 ---
 id: loo-nhgl
-status: open
+status: closed
 deps: [loo-1gkc]
 links: []
 created: 2026-02-25T01:22:44Z

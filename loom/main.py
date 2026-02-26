@@ -21,6 +21,7 @@ from loom.routers import (
     auth,
     characters,
     games,
+    notifications,
     oracles,
     pages,
     safety_tools,
@@ -69,6 +70,7 @@ app.include_router(world_document.router)
 app.include_router(characters.router)
 app.include_router(scenes.router)
 app.include_router(oracles.router)
+app.include_router(notifications.router)
 
 
 @app.exception_handler(_AuthRedirect)

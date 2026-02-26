@@ -161,6 +161,19 @@ class WordSeedWordType(str, enum.Enum):
     descriptor = "descriptor"
 
 
+class NotificationType(str, enum.Enum):
+    """Category of in-app notification."""
+
+    new_beat = "new_beat"
+    vote_required = "vote_required"
+    oracle_ready = "oracle_ready"
+    beat_challenged = "beat_challenged"
+    beat_approved = "beat_approved"
+    fortune_roll_contested = "fortune_roll_contested"
+    act_proposed = "act_proposed"
+    scene_proposed = "scene_proposed"
+
+
 # ---------------------------------------------------------------------------
 # Timestamp mixin
 # ---------------------------------------------------------------------------
@@ -224,6 +237,11 @@ class User(TimestampMixin, Base):
         foreign_keys="Character.owner_id",
     )
     beats: Mapped[list[Beat]] = relationship(back_populates="author")
+    notifications: Mapped[list[Notification]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="Notification.created_at.desc()",
+    )
 
 
 class Game(TimestampMixin, Base):
@@ -699,3 +717,24 @@ class WordSeedEntry(TimestampMixin, Base):
     )
 
     table: Mapped[WordSeedTable] = relationship(back_populates="entries")
+
+
+class Notification(TimestampMixin, Base):
+    """A per-user in-app notification for a game event."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    game_id: Mapped[int | None] = mapped_column(
+        ForeignKey("games.id", ondelete="CASCADE"), nullable=True
+    )
+    notification_type: Mapped[NotificationType] = mapped_column(
+        Enum(NotificationType, native_enum=False), nullable=False
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    link: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="notifications")
+    game: Mapped[Game | None] = relationship()

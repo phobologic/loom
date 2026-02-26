@@ -18,15 +18,14 @@ from loom.models import (
     GameSafetyTool,
     GameStatus,
     MemberRole,
+    NotificationType,
     PromptStatus,
     ProposalType,
     Session0Prompt,
     Session0Response,
     User,
-    Vote,
-    VoteProposal,
-    WorldDocument,
 )
+from loom.notifications import notify_game_members
 from loom.rendering import templates
 from loom.routers.world_document import _load_game_for_voting, create_world_doc_and_proposal
 
@@ -520,6 +519,15 @@ async def complete_session0(
         proposal_type=ProposalType.world_doc_approval,
         db=db,
     )
+    if not auto_approved:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.vote_required,
+            "Vote needed: world document approval",
+            link=f"/games/{game_id}/world-document",
+            exclude_user_id=current_user.id,
+        )
     await db.commit()
 
     if auto_approved:
@@ -567,6 +575,15 @@ async def propose_ready_to_play(
         proposal_type=ProposalType.ready_to_play,
         db=db,
     )
+    if not auto_approved:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.vote_required,
+            "Vote needed: ready to play",
+            link=f"/games/{game_id}/world-document",
+            exclude_user_id=current_user.id,
+        )
     await db.commit()
 
     if auto_approved:

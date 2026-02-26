@@ -20,6 +20,7 @@ from loom.models import (
     GameMember,
     GameStatus,
     MemberRole,
+    Notification,
     TieBreakingMethod,
     User,
 )
@@ -52,7 +53,34 @@ async def my_games(
         .order_by(Game.name)
     )
     games = result.scalars().all()
-    return templates.TemplateResponse(request, "games.html", {"user": current_user, "games": games})
+
+    # Build per-game unread notification counts
+    game_ids = [g.id for g in games]
+    unread_counts: dict[int, int] = {g.id: 0 for g in games}
+    if game_ids:
+        counts_result = await db.execute(
+            select(Notification.game_id, func.count(Notification.id))
+            .where(
+                Notification.user_id == current_user.id,
+                Notification.game_id.in_(game_ids),
+                Notification.read_at.is_(None),
+            )
+            .group_by(Notification.game_id)
+        )
+        for game_id, count in counts_result.all():
+            unread_counts[game_id] = count
+
+    total_unread = sum(unread_counts.values())
+    return templates.TemplateResponse(
+        request,
+        "games.html",
+        {
+            "user": current_user,
+            "games": games,
+            "unread_counts": unread_counts,
+            "total_unread": total_unread,
+        },
+    )
 
 
 @router.post("/games", response_class=RedirectResponse)

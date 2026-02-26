@@ -19,7 +19,6 @@ from loom.models import (
     EventType,
     Game,
     GameMember,
-    GameStatus,
     MemberRole,
     OracleComment,
     OracleInterpretationVote,

@@ -21,9 +21,7 @@ from loom.fortune_roll import (
     ODDS_LABELS,
     PROBABILITY_TABLE,
     RESULT_LABELS,
-    compute_fortune_roll_result,
     fortune_roll_contest_window_hours,
-    is_exceptional,
 )
 from loom.models import (
     Act,
@@ -34,6 +32,7 @@ from loom.models import (
     EventType,
     Game,
     GameMember,
+    NotificationType,
     OracleComment,
     OracleInterpretationVote,
     OracleType,
@@ -47,6 +46,7 @@ from loom.models import (
     VoteChoice,
     VoteProposal,
 )
+from loom.notifications import notify_game_members
 from loom.rendering import templates
 from loom.voting import is_approved
 from loom.word_seeds import ensure_game_seeds, random_word_pair
@@ -206,10 +206,21 @@ async def invoke_oracle(
             proposal.status = ProposalStatus.approved
             beat.status = BeatStatus.canon
 
+    scene_link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
+    if oracle_type == OracleType.world.value:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.oracle_ready,
+            f'Oracle interpretations ready: "{question.strip()[:60]}"',
+            link=scene_link,
+            exclude_user_id=current_user.id,
+        )
+
     await db.commit()
 
     return RedirectResponse(
-        url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}",
+        url=scene_link,
         status_code=303,
     )
 
@@ -552,6 +563,14 @@ async def contest_fortune_roll(
         raise HTTPException(status_code=403, detail="Fortune Roll has already resolved")
 
     event.fortune_roll_contested = True
+    await notify_game_members(
+        db,
+        game,
+        NotificationType.fortune_roll_contested,
+        "A Fortune Roll is being contested",
+        link=_scene_redirect(event),
+        exclude_user_id=current_user.id,
+    )
     await db.commit()
     return RedirectResponse(url=_scene_redirect(event), status_code=303)
 

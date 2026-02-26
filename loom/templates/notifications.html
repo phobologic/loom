@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications — Loom{% endblock %}
+
+{% block content %}
+<h1>Notifications</h1>
+<p><a href="/games">← Back to games</a></p>
+
+{% set unread = notifications | selectattr("read_at", "none") | list %}
+{% if unread %}
+<form method="post" action="/notifications/read-all">
+    <button type="submit">Mark all as read</button>
+</form>
+{% endif %}
+
+{% if notifications %}
+<ul>
+    {% for n in notifications %}
+    <li style="{% if n.read_at %}opacity:0.6{% endif %}">
+        {% if n.link %}
+        <a href="{{ n.link }}">{{ n.message }}</a>
+        {% else %}
+        {{ n.message }}
+        {% endif %}
+        {% if n.game %}
+        <small>— {{ n.game.name }}</small>
+        {% endif %}
+        <small>({{ n.created_at.strftime('%Y-%m-%d %H:%M') if n.created_at else '' }})</small>
+        {% if not n.read_at %}
+        <form method="post" action="/notifications/{{ n.id }}/read" style="display:inline">
+            <button type="submit">Mark read</button>
+        </form>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>No notifications yet.</p>
+{% endif %}
+{% endblock %}

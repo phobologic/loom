@@ -16,7 +16,6 @@ from loom.models import (
     Beat,
     BeatStatus,
     Character,
-    Event,
     EventType,
     Game,
     GameMember,

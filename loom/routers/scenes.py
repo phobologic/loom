@@ -28,6 +28,7 @@ from loom.models import (
     Game,
     GameMember,
     GameStatus,
+    NotificationType,
     OracleComment,
     OracleInterpretationVote,
     ProposalStatus,
@@ -39,6 +40,7 @@ from loom.models import (
     VoteChoice,
     VoteProposal,
 )
+from loom.notifications import create_notification, notify_game_members
 from loom.rendering import templates
 from loom.voting import activate_scene, approval_threshold, is_approved
 
@@ -126,6 +128,15 @@ async def _resolve_beat_proposals(
             if p and p.status == ProposalStatus.open and p.expires_at and now >= p.expires_at:
                 p.status = ProposalStatus.approved
                 beat.status = BeatStatus.canon
+                if beat.author_id is not None:
+                    await create_notification(
+                        db,
+                        user_id=beat.author_id,
+                        game_id=game.id,
+                        ntype=NotificationType.beat_approved,
+                        message="Your beat was auto-approved (silence timer expired)",
+                        link=f"/games/{game.id}/acts/{scene.act_id}/scenes/{scene.id}",
+                    )
                 any_expired = True
     if any_expired:
         await db.commit()
@@ -410,9 +421,22 @@ async def propose_scene(
 
     db.add(Vote(proposal_id=proposal.id, voter_id=current_user.id, choice=VoteChoice.yes))
 
-    if is_approved(1, total_players):
+    auto_approved = is_approved(1, total_players)
+    if auto_approved:
         proposal.status = ProposalStatus.approved
         activate_scene(act.scenes, scene)
+
+    link = f"/games/{game_id}/acts/{act_id}/scenes"
+    label = scene.guiding_question[:60]
+    if not auto_approved:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.vote_required,
+            f'Vote needed: scene proposal "{label}"',
+            link=link,
+            exclude_user_id=current_user.id,
+        )
 
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}/acts/{act_id}/scenes", status_code=303)
@@ -590,6 +614,8 @@ async def submit_beat(
             )
         db.add(event)
 
+    scene_link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
+
     if significance == BeatSignificance.major:
         total_players = len(game.members)
         expires_at = datetime.now(timezone.utc) + timedelta(hours=game.silence_timer_hours)
@@ -609,14 +635,33 @@ async def submit_beat(
                 choice=VoteChoice.yes,
             )
         )
-        if is_approved(1, total_players):
+        beat_auto_approved = is_approved(1, total_players)
+        if beat_auto_approved:
             proposal.status = ProposalStatus.approved
             beat.status = BeatStatus.canon
+        else:
+            await notify_game_members(
+                db,
+                game,
+                NotificationType.vote_required,
+                "Vote needed: major beat submitted",
+                link=scene_link,
+                exclude_user_id=current_user.id,
+            )
+
+    await notify_game_members(
+        db,
+        game,
+        NotificationType.new_beat,
+        "A new beat was submitted",
+        link=scene_link,
+        exclude_user_id=current_user.id,
+    )
 
     await db.commit()
 
     return RedirectResponse(
-        url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}",
+        url=scene_link,
         status_code=303,
     )
 

@@ -17,6 +17,7 @@ from loom.models import (
     Game,
     GameMember,
     GameStatus,
+    NotificationType,
     ProposalStatus,
     ProposalType,
     User,
@@ -24,6 +25,7 @@ from loom.models import (
     VoteChoice,
     VoteProposal,
 )
+from loom.notifications import notify_game_members
 from loom.rendering import templates
 from loom.voting import activate_act, approval_threshold, is_approved
 
@@ -166,9 +168,30 @@ async def propose_act(
 
     db.add(Vote(proposal_id=proposal.id, voter_id=current_user.id, choice=VoteChoice.yes))
 
-    if is_approved(1, total_players):
+    auto_approved = is_approved(1, total_players)
+    if auto_approved:
         proposal.status = ProposalStatus.approved
         activate_act(game.acts, act)
+
+    link = f"/games/{game_id}/acts"
+    label = act.guiding_question[:60]
+    if auto_approved:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.act_proposed,
+            f'Act approved: "{label}"',
+            link=link,
+        )
+    else:
+        await notify_game_members(
+            db,
+            game,
+            NotificationType.vote_required,
+            f'Vote needed: act proposal "{label}"',
+            link=link,
+            exclude_user_id=current_user.id,
+        )
 
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}/acts", status_code=303)

@@ -5,10 +5,16 @@
 {% block content %}
 <h1>My Games</h1>
 <p>Logged in as: <strong>{{ user.display_name }}</strong></p>
+{% if total_unread %}<p><a href="/notifications">{{ total_unread }} unread notification{{ 's' if total_unread != 1 }}</a></p>{% endif %}
 {% if games %}
 <ul>
     {% for game in games %}
-    <li><a href="/games/{{ game.id }}">{{ game.name }}</a></li>
+    <li>
+        <a href="/games/{{ game.id }}">{{ game.name }}</a>
+        {% if unread_counts[game.id] %}
+        <span>[{{ unread_counts[game.id] }} new]</span>
+        {% endif %}
+    </li>
     {% endfor %}
 </ul>
 {% else %}
