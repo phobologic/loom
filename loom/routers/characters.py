@@ -98,6 +98,7 @@ async def create_character(
     name: str = Form(...),
     description: str = Form(""),
     notes: str = Form(""),
+    voice_notes: str = Form(""),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -129,6 +130,7 @@ async def create_character(
             name=name,
             description=description.strip() or None,
             notes=notes.strip() or None,
+            voice_notes=voice_notes.strip() or None,
         )
     )
     await db.commit()
@@ -184,6 +186,7 @@ async def update_character(
     name: str = Form(...),
     description: str = Form(""),
     notes: str = Form(""),
+    voice_notes: str = Form(""),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -215,6 +218,7 @@ async def update_character(
     character.name = name
     character.description = description.strip() or None
     character.notes = notes.strip() or None
+    character.voice_notes = voice_notes.strip() or None
     await db.commit()
 
     return RedirectResponse(url=f"/games/{game_id}/characters", status_code=303)

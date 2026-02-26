@@ -31,6 +31,10 @@
       <label for="edit-notes"><strong>Notes</strong> (personality, goals, etc.)</label><br>
       <textarea id="edit-notes" name="notes" rows="3" style="width:100%; max-width:600px;">{{ editing.notes or "" }}</textarea>
     </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-voice-notes"><strong>Voice Notes</strong> (narrative style for AI, e.g. "terse and clipped")</label><br>
+      <textarea id="edit-voice-notes" name="voice_notes" rows="2" style="width:100%; max-width:600px;">{{ editing.voice_notes or "" }}</textarea>
+    </div>
     <button type="submit">Save Changes</button>
     <a href="/games/{{ game.id }}/characters" style="margin-left:0.75rem;">Cancel</a>
   </form>
@@ -52,6 +56,9 @@
       {% endif %}
       {% if char.notes %}
         <p style="margin:0.25rem 0 0; color:#555;"><em>Notes: {{ char.notes }}</em></p>
+      {% endif %}
+      {% if char.voice_notes %}
+        <p style="margin:0.25rem 0 0; color:#555;"><em>Voice: {{ char.voice_notes }}</em></p>
       {% endif %}
       {% if game.status.value != "archived" %}
         {% if char.owner_id == current_user.id %}
@@ -82,6 +89,10 @@
       <div style="margin-bottom:0.5rem;">
         <label for="notes"><strong>Notes</strong> (personality, goals, etc.)</label><br>
         <textarea id="notes" name="notes" rows="3" style="width:100%; max-width:600px;"></textarea>
+      </div>
+      <div style="margin-bottom:0.5rem;">
+        <label for="voice-notes"><strong>Voice Notes</strong> (narrative style for AI, e.g. "terse and clipped")</label><br>
+        <textarea id="voice-notes" name="voice_notes" rows="2" style="width:100%; max-width:600px;"></textarea>
       </div>
       <button type="submit">Create Character</button>
     </form>

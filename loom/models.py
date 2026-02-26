@@ -547,6 +547,7 @@ class Character(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    voice_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="characters", foreign_keys=[game_id])
     owner: Mapped[User | None] = relationship(back_populates="characters", foreign_keys=[owner_id])

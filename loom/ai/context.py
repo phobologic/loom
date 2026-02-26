@@ -78,6 +78,8 @@ def assemble_scene_context(
             entry = char.name
             if char.description:
                 entry += f": {char.description}"
+            if char.voice_notes:
+                entry += f" [Voice: {char.voice_notes}]"
             char_lines.append(f"  - {entry}")
         parts.append("CHARACTERS IN SCENE:\n" + "\n".join(char_lines))
 
