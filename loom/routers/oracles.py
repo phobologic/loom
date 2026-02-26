@@ -16,6 +16,15 @@ from starlette.requests import Request
 from loom.ai import stubs as ai_stubs
 from loom.database import get_db
 from loom.dependencies import get_current_user
+from loom.fortune_roll import (
+    FORTUNE_ROLL_ODDS,
+    ODDS_LABELS,
+    PROBABILITY_TABLE,
+    RESULT_LABELS,
+    compute_fortune_roll_result,
+    fortune_roll_contest_window_hours,
+    is_exceptional,
+)
 from loom.models import (
     Act,
     Beat,
@@ -377,5 +386,202 @@ async def select_interpretation(
         selected_text = event.interpretations[interpretation_index]
 
     event.oracle_selected_interpretation = selected_text
+    await db.commit()
+    return RedirectResponse(url=_scene_redirect(event), status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Fortune Roll routes
+# ---------------------------------------------------------------------------
+
+
+async def _load_fortune_roll_event(event_id: int, game_id: int, db: AsyncSession) -> Event | None:
+    """Load a fortune_roll Event with its beat/scene/game chain."""
+    result = await db.execute(
+        select(Event)
+        .where(Event.id == event_id)
+        .options(
+            selectinload(Event.beat)
+            .selectinload(Beat.scene)
+            .selectinload(Scene.act)
+            .selectinload(Act.game)
+            .selectinload(Game.members),
+        )
+    )
+    event = result.scalar_one_or_none()
+    if event is None:
+        return None
+    if event.beat.scene.act.game.id != game_id:
+        return None
+    return event
+
+
+@router.get(
+    "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/fortune-roll",
+    response_class=HTMLResponse,
+)
+async def fortune_roll_form(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Show the Fortune Roll form."""
+    scene = await _load_scene(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+    act = scene.act
+
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if scene.status != SceneStatus.active:
+        raise HTTPException(
+            status_code=403, detail="Fortune Roll can only be invoked in an active scene"
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "fortune_roll.html",
+        {
+            "game": game,
+            "act": act,
+            "scene": scene,
+            "odds_options": FORTUNE_ROLL_ODDS,
+            "odds_labels": ODDS_LABELS,
+            "probability_table": PROBABILITY_TABLE,
+            "result_labels": RESULT_LABELS,
+        },
+    )
+
+
+@router.post(
+    "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/fortune-roll",
+    response_class=RedirectResponse,
+)
+async def invoke_fortune_roll(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    question: str = Form(...),
+    odds: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Submit a Fortune Roll: creates a pending beat+event, starts the contest window."""
+    scene = await _load_scene(scene_id, db)
+    if scene is None or scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    game = scene.act.game
+
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if scene.status != SceneStatus.active:
+        raise HTTPException(
+            status_code=403, detail="Fortune Roll can only be invoked in an active scene"
+        )
+
+    if not question.strip():
+        raise HTTPException(status_code=422, detail="Fortune Roll question is required")
+
+    if odds not in FORTUNE_ROLL_ODDS:
+        raise HTTPException(status_code=422, detail="Invalid odds setting")
+
+    window_hours = fortune_roll_contest_window_hours(
+        game.silence_timer_hours, game.fortune_roll_contest_window_hours
+    )
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=window_hours)
+
+    next_order = max((b.order for b in scene.beats), default=0) + 1
+    beat = Beat(
+        scene_id=scene.id,
+        author_id=current_user.id,
+        significance=BeatSignificance.minor,
+        status=BeatStatus.proposed,
+        order=next_order,
+    )
+    db.add(beat)
+    await db.flush()
+
+    event = Event(
+        beat_id=beat.id,
+        type=EventType.fortune_roll,
+        oracle_query=question.strip(),
+        fortune_roll_odds=odds,
+        fortune_roll_tension=scene.tension,
+        fortune_roll_result=None,
+        fortune_roll_expires_at=expires_at,
+        fortune_roll_contested=False,
+        order=1,
+    )
+    db.add(event)
+    await db.commit()
+
+    return RedirectResponse(
+        url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}",
+        status_code=303,
+    )
+
+
+@router.post(
+    "/games/{game_id}/fortune-roll/events/{event_id}/contest",
+    response_class=RedirectResponse,
+)
+async def contest_fortune_roll(
+    game_id: int,
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Contest the odds on a pending Fortune Roll."""
+    event = await _load_fortune_roll_event(event_id, game_id, db)
+    if event is None or event.type != EventType.fortune_roll:
+        raise HTTPException(status_code=404, detail="Fortune Roll event not found")
+
+    game = event.beat.scene.act.game
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if event.fortune_roll_result is not None:
+        raise HTTPException(status_code=403, detail="Fortune Roll has already resolved")
+
+    event.fortune_roll_contested = True
+    await db.commit()
+    return RedirectResponse(url=_scene_redirect(event), status_code=303)
+
+
+@router.post(
+    "/games/{game_id}/fortune-roll/events/{event_id}/reaffirm",
+    response_class=RedirectResponse,
+)
+async def reaffirm_fortune_roll(
+    game_id: int,
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Invoker reaffirms the odds after a contest, restarting the window."""
+    event = await _load_fortune_roll_event(event_id, game_id, db)
+    if event is None or event.type != EventType.fortune_roll:
+        raise HTTPException(status_code=404, detail="Fortune Roll event not found")
+
+    if event.beat.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the Fortune Roll invoker can reaffirm")
+
+    if event.fortune_roll_result is not None:
+        raise HTTPException(status_code=403, detail="Fortune Roll has already resolved")
+
+    game = event.beat.scene.act.game
+    window_hours = fortune_roll_contest_window_hours(
+        game.silence_timer_hours, game.fortune_roll_contest_window_hours
+    )
+    event.fortune_roll_contested = False
+    event.fortune_roll_expires_at = datetime.now(timezone.utc) + timedelta(hours=window_hours)
     await db.commit()
     return RedirectResponse(url=_scene_redirect(event), status_code=303)

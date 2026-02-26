@@ -428,6 +428,12 @@ class Event(TimestampMixin, Base):
     fortune_roll_odds: Mapped[str | None] = mapped_column(String(20), nullable=True)
     fortune_roll_result: Mapped[str | None] = mapped_column(String(20), nullable=True)
     fortune_roll_tension: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fortune_roll_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    fortune_roll_contested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
 
     # Shared: word seeds for oracle and fortune_roll events
     word_seed_action: Mapped[str | None] = mapped_column(String(100), nullable=True)

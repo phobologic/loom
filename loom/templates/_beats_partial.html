@@ -176,10 +176,66 @@
       </div>
       {% endif %}{# end unresolved oracle discussion #}
       {% elif event.type.value == "fortune_roll" %}
-      <p style="margin:0.2rem 0 0;">
-        Odds: {{ event.fortune_roll_odds }} &rarr; <strong>{{ event.fortune_roll_result }}</strong>
-        {% if event.fortune_roll_tension %}&mdash; Tension: {{ event.fortune_roll_tension }}{% endif %}
+      <p style="margin:0.2rem 0 0;"><em>{{ event.oracle_query }}</em></p>
+      <p style="margin:0.15rem 0 0; font-size:0.85rem; color:#555;">
+        Odds: <strong>{{ event.fortune_roll_odds | replace("_", " ") | title }}</strong>
+        &middot; Tension: {{ event.fortune_roll_tension or "?" }}
       </p>
+      {% if event.fortune_roll_result %}
+      {# Resolved: display result with colour coding #}
+      {% set fr = event.fortune_roll_result %}
+      <div style="margin:0.4rem 0 0; padding:0.4rem 0.6rem; border-radius:4px;
+        {% if fr == 'exceptional_yes' %}background:#e8f5e9; border:1px solid #4caf50;
+        {% elif fr == 'yes' %}background:#f1f8e9; border:1px solid #8bc34a;
+        {% elif fr == 'no' %}background:#fff8e1; border:1px solid #ffa726;
+        {% else %}background:#fce4ec; border:1px solid #e53935;{% endif %}">
+        <strong style="font-size:0.95rem;">
+          {% if fr == 'exceptional_yes' %}&#10024; Exceptional Yes
+          {% elif fr == 'yes' %}&#10003; Yes
+          {% elif fr == 'no' %}&#10007; No
+          {% else %}&#9888; Exceptional No{% endif %}
+        </strong>
+        {% if fr in ('exceptional_yes', 'exceptional_no') %}
+        <span style="font-size:0.78rem; color:#555; margin-left:0.4rem;">[major beat]</span>
+        {% endif %}
+      </div>
+      {% else %}
+      {# Pending: show contest state or countdown #}
+      {% set is_fr_invoker = (current_user_id is defined and beat.author_id == current_user_id) %}
+      {% if event.fortune_roll_contested %}
+      <div style="margin:0.4rem 0 0; padding:0.4rem 0.6rem; background:#fff3e0; border:1px solid #ff9800; border-radius:4px;">
+        <p style="margin:0; font-size:0.85rem; font-weight:bold; color:#e65100;">&#9888; Odds contested &mdash; awaiting invoker reaffirmation</p>
+        {% if is_fr_invoker %}
+        <form method="post" action="/games/{{ game.id }}/fortune-roll/events/{{ event.id }}/reaffirm" style="margin-top:0.4rem;">
+          <button type="submit" style="font-size:0.82rem; background:#fff3e0; border:1px solid #ff9800;">
+            &#10003; Reaffirm these odds &amp; restart window
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <div style="margin:0.4rem 0 0; padding:0.4rem 0.6rem; background:#e3f2fd; border:1px solid #64b5f6; border-radius:4px;">
+        <p style="margin:0 0 0.2rem; font-size:0.85rem; color:#0d47a1;">
+          &#8987; Pending &mdash; resolves after contest window
+          {% if event.fortune_roll_expires_at and now is defined %}
+          {% set secs = ((event.fortune_roll_expires_at - now).total_seconds()) | int %}
+          {% if secs > 0 %}
+          ({% if secs > 3600 %}~{{ (secs / 3600) | int }}h{% elif secs > 60 %}~{{ (secs / 60) | int }}m{% else %}imminently{% endif %})
+          {% else %}
+          (resolving…)
+          {% endif %}
+          {% endif %}
+        </p>
+        {% if not is_fr_invoker %}
+        <form method="post" action="/games/{{ game.id }}/fortune-roll/events/{{ event.id }}/contest" style="margin-top:0.2rem;">
+          <button type="submit" style="font-size:0.8rem; background:#e3f2fd; border:1px solid #64b5f6;">
+            &#9888; Contest these odds
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% endif %}
       {% elif event.type.value == "ooc" %}
       <p style="margin:0.2rem 0 0; color:#555;">{{ event.content }}</p>
       {% endif %}

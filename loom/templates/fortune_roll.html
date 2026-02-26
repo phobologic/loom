@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Fortune Roll — Scene {{ scene.order }} — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>{{ game.name }} &mdash; Fortune Roll</h1>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="/games/{{ game.id }}">Dashboard</a> |
+    <a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}">Scene {{ scene.order }}</a>
+</nav>
+
+<section style="margin-top:1.5rem; padding:1rem; border:1px solid #ccc; border-radius:4px; background:#fafafa;">
+  <h2 style="margin-top:0;">Ask Fate a Question</h2>
+  <p style="color:#555; margin:0 0 0.75rem;">
+    The Fortune Roll is a quick yes/no oracle. Set the odds, and Fate — shaped by the current
+    Tension — will answer with Yes, No, or something more dramatic.
+  </p>
+
+  <div style="margin-bottom:0.75rem; display:inline-flex; align-items:center; gap:0.5rem; padding:0.5rem 0.8rem; background:#f0f4fa; border:1px solid #b8cce4; border-radius:4px;">
+    <span style="font-size:0.8rem; color:#666; text-transform:uppercase; letter-spacing:0.04em;">Current Tension</span>
+    <span style="font-size:1.4rem; font-weight:bold; color:{% if scene.tension >= 7 %}#c04000{% elif scene.tension >= 4 %}#c07800{% else %}#2a7a2a{% endif %};">
+      {{ scene.tension }}
+    </span>
+    <span style="font-size:0.85rem; color:#888;">/ 9</span>
+  </div>
+
+  <form method="post" action="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/fortune-roll">
+
+    <div style="margin-bottom:0.75rem;">
+      <label style="display:block; font-weight:bold; margin-bottom:0.3rem;" for="question">
+        Your yes/no question
+      </label>
+      <textarea id="question" name="question" rows="3" required
+        style="width:100%; max-width:36rem;"
+        placeholder="Will the guards believe our story?"></textarea>
+    </div>
+
+    <div style="margin:0.75rem 0; padding:0.6rem 0.75rem; background:#f7f7f0; border:1px solid #ddd; border-radius:4px; max-width:36rem;">
+      <div style="font-size:0.85rem; color:#555; margin-bottom:0.5rem;"><strong>Set the odds</strong></div>
+      {% for odds_val in odds_options %}
+      {% set label = odds_labels[odds_val] %}
+      {% set probs = probability_table[odds_val][scene.tension] %}
+      <label style="display:flex; align-items:baseline; gap:0.5rem; margin:0.3rem 0; font-size:0.9rem;">
+        <input type="radio" name="odds" value="{{ odds_val }}"{% if odds_val == "fifty_fifty" %} checked{% endif %} required>
+        <span style="min-width:8rem;">{{ label }}</span>
+        <span style="font-size:0.78rem; color:#888;">
+          {{ probs.exceptional_yes }}% ex.yes &middot;
+          {{ probs.yes }}% yes &middot;
+          {{ probs.no }}% no &middot;
+          {{ probs.exceptional_no }}% ex.no
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <p style="font-size:0.82rem; color:#777; margin:0.25rem 0 0.75rem;">
+      Probabilities shown for Tension {{ scene.tension }}. Other players may contest the odds before the roll resolves.
+    </p>
+
+    <button type="submit" style="margin-top:0.25rem;">Ask Fate</button>
+  </form>
+</section>
+
+<details style="margin-top:1.5rem; padding:0.75rem 1rem; border:1px solid #ddd; border-radius:4px; background:#fafafa;">
+  <summary style="cursor:pointer; font-weight:bold; font-size:0.9rem;">Probability Reference Table (all tensions)</summary>
+  <div style="overflow-x:auto; margin-top:0.75rem;">
+    <table style="border-collapse:collapse; font-size:0.8rem;">
+      <thead>
+        <tr>
+          <th style="padding:0.3rem 0.6rem; border:1px solid #ddd; background:#f0f0f0;">Odds / Tension</th>
+          {% for t in range(1, 10) %}
+          <th style="padding:0.3rem 0.5rem; border:1px solid #ddd; background:{% if t == scene.tension %}#e8f0fa{% else %}#f0f0f0{% endif %}; {% if t == scene.tension %}font-weight:bold;{% endif %}">T{{ t }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for odds_val in odds_options %}
+        <tr>
+          <td style="padding:0.3rem 0.6rem; border:1px solid #ddd; font-weight:bold;">{{ odds_labels[odds_val] }}</td>
+          {% for t in range(1, 10) %}
+          {% set probs = probability_table[odds_val][t] %}
+          <td style="padding:0.3rem 0.5rem; border:1px solid #ddd; font-size:0.75rem; {% if t == scene.tension %}background:#f0f6ff;{% endif %}">
+            <span style="color:#1a7a1a;">{{ probs.exceptional_yes + probs.yes }}%</span> yes<br>
+            <span style="color:#888; font-size:0.7rem;">{{ probs.exceptional_yes }}% ex</span>
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="font-size:0.75rem; color:#999; margin-top:0.4rem;">"yes" = yes + exceptional yes &middot; "ex" = exceptional yes only</p>
+  </div>
+</details>
+
+<p style="margin-top:1.5rem;">
+  <a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}">&larr; Back to Scene</a>
+</p>
+{% endblock %}

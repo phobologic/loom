@@ -15,6 +15,7 @@ from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.dice import DiceError
 from loom.dice import roll as roll_dice
+from loom.fortune_roll import compute_fortune_roll_result, is_exceptional
 from loom.models import (
     Act,
     ActStatus,
@@ -109,7 +110,8 @@ async def _resolve_beat_proposals(
         - my_votes: {beat_id: Vote | None} for the current user
     """
     game = scene.act.game
-    now = datetime.now(timezone.utc)
+    # Use naive UTC: SQLite returns naive datetimes from DateTime(timezone=True) columns
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     beat_proposals: dict[int, VoteProposal] = {
         p.beat_id: p
@@ -167,6 +169,73 @@ def _build_oracle_context(
             )
 
     return oracle_vote_counts, oracle_my_votes
+
+
+async def _resolve_fortune_rolls(
+    scene: Scene,
+    current_user_id: int,
+    db: AsyncSession,
+) -> bool:
+    """Auto-resolve any pending Fortune Rolls whose contest window has expired.
+
+    Returns True if any fortune rolls were resolved (so caller can commit).
+    """
+    # Use naive UTC: SQLite returns naive datetimes from DateTime(timezone=True) columns
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    game = scene.act.game
+    any_resolved = False
+
+    for beat in scene.beats:
+        for event in beat.events:
+            if event.type != EventType.fortune_roll:
+                continue
+            if event.fortune_roll_result is not None:
+                continue
+            if event.fortune_roll_contested:
+                continue
+            if event.fortune_roll_expires_at is None:
+                continue
+            if now < event.fortune_roll_expires_at:
+                continue
+
+            # Contest window expired with no contest — roll now.
+            result = compute_fortune_roll_result(
+                event.fortune_roll_odds or "fifty_fifty",
+                event.fortune_roll_tension or 5,
+            )
+            event.fortune_roll_result = result
+
+            if is_exceptional(result):
+                beat.significance = BeatSignificance.major
+                beat.status = BeatStatus.proposed
+                total_players = len(game.members)
+                expires_at = now + timedelta(hours=game.silence_timer_hours)
+                proposal = VoteProposal(
+                    game_id=game.id,
+                    proposal_type=ProposalType.beat_proposal,
+                    proposed_by_id=beat.author_id,
+                    beat_id=beat.id,
+                    expires_at=expires_at,
+                )
+                db.add(proposal)
+                await db.flush()
+                db.add(
+                    Vote(
+                        proposal_id=proposal.id,
+                        voter_id=beat.author_id,
+                        choice=VoteChoice.yes,
+                    )
+                )
+                if is_approved(1, total_players):
+                    proposal.status = ProposalStatus.approved
+                    beat.status = BeatStatus.canon
+            else:
+                beat.significance = BeatSignificance.minor
+                beat.status = BeatStatus.canon
+
+            any_resolved = True
+
+    return any_resolved
 
 
 async def _load_game_for_scenes(game_id: int, db: AsyncSession) -> Game | None:
@@ -380,8 +449,11 @@ async def scene_detail(
     beat_proposals, beat_vote_counts, beat_my_votes = await _resolve_beat_proposals(
         scene, current_user.id, db
     )
+    if await _resolve_fortune_rolls(scene, current_user.id, db):
+        await db.commit()
     oracle_vote_counts, oracle_my_votes = _build_oracle_context(scene, current_user.id)
-    now = datetime.now(timezone.utc)
+    # Use naive UTC for template comparisons: SQLite returns naive datetimes
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     return templates.TemplateResponse(
         request,
@@ -578,8 +650,11 @@ async def beats_partial(
     beat_proposals, beat_vote_counts, beat_my_votes = await _resolve_beat_proposals(
         scene, current_user.id, db
     )
+    if await _resolve_fortune_rolls(scene, current_user.id, db):
+        await db.commit()
     oracle_vote_counts, oracle_my_votes = _build_oracle_context(scene, current_user.id)
-    now = datetime.now(timezone.utc)
+    # Use naive UTC for template comparisons: SQLite returns naive datetimes
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     return templates.TemplateResponse(
         request,
