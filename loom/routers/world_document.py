@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
-from loom.ai.stubs import generate_world_document as _stub_generate
+from loom.ai.client import generate_world_document as _ai_generate_world_document
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
@@ -111,7 +111,7 @@ async def create_world_doc_and_proposal(
     total_players = len(game.members)
 
     # Generate (or regenerate) world document content
-    content = _stub_generate(_collect_session0_data(game))
+    content = await _ai_generate_world_document(_collect_session0_data(game))
 
     world_doc = game.world_document
     if world_doc is None:

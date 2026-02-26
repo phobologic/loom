@@ -1,7 +1,40 @@
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from loom.main import app
+
+
+@pytest.fixture(autouse=True)
+def mock_ai(monkeypatch):
+    """Stub all AI client calls so tests never hit the Anthropic API."""
+
+    async def _oracle_interpretations(question, word_pair, *, game=None, scene=None):
+        return [
+            "The threads of fate suggest an unexpected alliance forms in shadow.",
+            "Ancient obligations resurface, demanding a choice between duty and desire.",
+            "What was lost cannot be reclaimed unchanged — but transformation awaits.",
+        ]
+
+    async def _session0_synthesis(question, inputs, *, game_name="", pitch=""):
+        return (
+            "A world of flickering gaslight and forgotten gods, where the streets whisper "
+            "secrets and every alliance carries a hidden price."
+        )
+
+    async def _generate_world_document(session0_data):
+        return "# World Document\n\nThis world is shaped by the choices made at its founding..."
+
+    monkeypatch.setattr("loom.ai.client.oracle_interpretations", _oracle_interpretations)
+    monkeypatch.setattr("loom.ai.client.session0_synthesis", _session0_synthesis)
+    monkeypatch.setattr("loom.ai.client.generate_world_document", _generate_world_document)
+
+    # Also patch the imported names in the routers so the monkeypatches take effect
+    monkeypatch.setattr("loom.routers.oracles.ai_oracle_interpretations", _oracle_interpretations)
+    monkeypatch.setattr("loom.routers.session0.session0_synthesis", _session0_synthesis)
+    monkeypatch.setattr(
+        "loom.routers.world_document._ai_generate_world_document", _generate_world_document
+    )
 
 
 @pytest_asyncio.fixture

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
-from loom.ai.stubs import session0_synthesis
+from loom.ai.client import session0_synthesis
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
@@ -273,12 +273,14 @@ async def synthesize_prompt(
     if prompt is None:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    inputs = []
-    if game.pitch:
-        inputs.append(game.pitch)
-    inputs.extend(r.content for r in prompt.responses)
+    inputs = [r.content for r in prompt.responses]
 
-    prompt.synthesis = session0_synthesis(inputs)
+    prompt.synthesis = await session0_synthesis(
+        prompt.question,
+        inputs,
+        game_name=game.name,
+        pitch=game.pitch or "",
+    )
     prompt.synthesis_accepted = False
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}/session0/{prompt_id}", status_code=303)
@@ -305,12 +307,14 @@ async def regenerate_synthesis(
     if prompt is None:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    inputs = []
-    if game.pitch:
-        inputs.append(game.pitch)
-    inputs.extend(r.content for r in prompt.responses)
+    inputs = [r.content for r in prompt.responses]
 
-    prompt.synthesis = session0_synthesis(inputs)
+    prompt.synthesis = await session0_synthesis(
+        prompt.question,
+        inputs,
+        game_name=game.name,
+        pitch=game.pitch or "",
+    )
     prompt.synthesis_accepted = False
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}/session0/{prompt_id}", status_code=303)

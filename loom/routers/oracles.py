@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
-from loom.ai import stubs as ai_stubs
+from loom.ai.client import oracle_interpretations as ai_oracle_interpretations
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.fortune_roll import (
@@ -67,7 +67,10 @@ async def _load_scene(scene_id: int, db: AsyncSession) -> Scene | None:
         .where(Scene.id == scene_id)
         .options(
             selectinload(Scene.act).selectinload(Act.game).selectinload(Game.members),
-            selectinload(Scene.beats),
+            selectinload(Scene.act).selectinload(Act.game).selectinload(Game.world_document),
+            selectinload(Scene.act).selectinload(Act.game).selectinload(Game.safety_tools),
+            selectinload(Scene.beats).selectinload(Beat.events),
+            selectinload(Scene.characters_present),
         )
     )
     return result.scalar_one_or_none()
@@ -162,8 +165,11 @@ async def invoke_oracle(
     significance = BeatSignificance(beat_significance)
     status = BeatStatus.canon if significance == BeatSignificance.minor else BeatStatus.proposed
 
-    interpretations = ai_stubs.oracle_interpretations(
-        question.strip(), (word_action.strip(), word_descriptor.strip())
+    interpretations = await ai_oracle_interpretations(
+        question.strip(),
+        (word_action.strip(), word_descriptor.strip()),
+        game=game,
+        scene=scene,
     )
 
     next_order = max((b.order for b in scene.beats), default=0) + 1
