@@ -21,3 +21,7 @@ wheels/
 
 # repoguide
 .repoguide-cache
+
+# Playwright
+.playwright-cli/
+tests/e2e/screenshots/
