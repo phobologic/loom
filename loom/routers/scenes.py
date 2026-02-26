@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
-from loom.database import get_db
+from loom.ai.client import expand_beat_prose
+from loom.database import AsyncSessionLocal, get_db
 from loom.dependencies import get_current_user
 from loom.dice import DiceError
 from loom.dice import roll as roll_dice
@@ -44,6 +46,8 @@ from loom.models import (
 from loom.notifications import create_notification, notify_game_members
 from loom.rendering import templates
 from loom.voting import activate_scene, approval_threshold, is_approved, resolve_tension_vote
+
+logger = logging.getLogger(__name__)
 
 _IC_EVENT_TYPES = {"narrative", "roll", "oracle", "fortune_roll"}
 _OOC_EVENT_TYPES = {"ooc"}
@@ -795,6 +799,70 @@ async def scene_detail(
 _BEAT_EVENT_TYPES = {"narrative", "ooc", "roll"}
 
 
+async def _generate_prose_for_beat(beat_id: int, game_id: int) -> None:
+    """Background task: generate prose expansion for each narrative event in a beat.
+
+    Opens its own database session since the request session is closed by the time
+    this runs. Failures are logged but do not surface to the user.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Beat)
+                .where(Beat.id == beat_id)
+                .options(
+                    selectinload(Beat.events),
+                    selectinload(Beat.scene)
+                    .selectinload(Scene.act)
+                    .selectinload(Act.game)
+                    .selectinload(Game.world_document),
+                    selectinload(Beat.scene)
+                    .selectinload(Scene.act)
+                    .selectinload(Act.game)
+                    .selectinload(Game.safety_tools),
+                    selectinload(Beat.scene)
+                    .selectinload(Scene.act)
+                    .selectinload(Act.game)
+                    .selectinload(Game.members),
+                    selectinload(Beat.scene).selectinload(Scene.characters_present),
+                    selectinload(Beat.scene).selectinload(Scene.beats).selectinload(Beat.events),
+                )
+            )
+            beat = result.scalar_one_or_none()
+            if beat is None:
+                return
+            scene = beat.scene
+            game = scene.act.game
+            narrative_events = [e for e in beat.events if e.type == EventType.narrative]
+            if not narrative_events:
+                return
+            for event in narrative_events:
+                if not event.content:
+                    continue
+                prose = await expand_beat_prose(game, scene, event.content, db=db, game_id=game_id)
+                event.prose_expanded = prose
+            await db.commit()
+    except Exception:
+        logger.exception("Failed to generate prose expansion for beat %d", beat_id)
+
+
+def _effective_prose_mode(member: GameMember, user: User) -> str:
+    """Return the prose mode in effect for this user in this game."""
+    return member.prose_mode_override if member.prose_mode_override else user.prose_mode
+
+
+def _should_offer_prose(member: GameMember, user: User, narrative_events: list[Event]) -> bool:
+    """Return True if a prose suggestion should be generated for this beat submission."""
+    mode = _effective_prose_mode(member, user)
+    if mode == "never":
+        return False
+    if mode == "threshold":
+        return any(
+            len((e.content or "").split()) < user.prose_threshold_words for e in narrative_events
+        )
+    return True  # "always"
+
+
 @router.post(
     "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
     response_class=RedirectResponse,
@@ -811,6 +879,7 @@ async def submit_beat(
     waiting_for_character_id: int | None = Form(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> RedirectResponse:
     """Submit a beat with one or more events (narrative, OOC, or roll)."""
     scene = await _load_scene_for_view(scene_id, db)
@@ -898,6 +967,7 @@ async def submit_beat(
     db.add(beat)
     await db.flush()
 
+    narrative_events_created: list[Event] = []
     for i, spec in enumerate(event_specs):
         if spec["type"] in ("narrative", "ooc"):
             event = Event(
@@ -916,6 +986,8 @@ async def submit_beat(
                 order=i + 1,
             )
         db.add(event)
+        if spec["type"] == "narrative":
+            narrative_events_created.append(event)
 
     scene_link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
 
@@ -979,7 +1051,8 @@ async def submit_beat(
                 user_id=spotlight_char.owner_id,
                 game_id=game.id,
                 ntype=NotificationType.spotlight,
-                message=f"Your character {spotlight_char.name!r} has been spotlighted — someone is waiting for your response",
+                message=f"Your character {spotlight_char.name!r} has been spotlighted "
+                "— someone is waiting for your response",
                 link=scene_link,
             )
 
@@ -997,6 +1070,12 @@ async def submit_beat(
             prior_beat.spotlight_resolved_at = now_utc
 
     await db.commit()
+
+    # Schedule prose expansion in background if applicable (REQ-PROSE-001)
+    if narrative_events_created and _should_offer_prose(
+        current_member, current_user, narrative_events_created
+    ):
+        background_tasks.add_task(_generate_prose_for_beat, beat.id, game.id)
 
     redirect_url = f"{scene_link}?nudge={nudge_count}" if show_nudge else scene_link
     return RedirectResponse(url=redirect_url, status_code=303)
@@ -1319,4 +1398,91 @@ async def beats_partial(
             "contribution_counts": contribution_counts,
             "active_spotlight": active_spotlight,
         },
+    )
+
+
+async def _load_event_for_prose(
+    event_id: int,
+    beat_id: int,
+    scene_id: int,
+    act_id: int,
+    game_id: int,
+    current_user_id: int,
+    db: AsyncSession,
+) -> Event:
+    """Load and authorize a narrative event for prose apply/dismiss actions."""
+    result = await db.execute(
+        select(Event)
+        .join(Beat, Event.beat_id == Beat.id)
+        .join(Scene, Beat.scene_id == Scene.id)
+        .join(Act, Scene.act_id == Act.id)
+        .where(
+            Event.id == event_id,
+            Event.beat_id == beat_id,
+            Beat.scene_id == scene_id,
+            Scene.act_id == act_id,
+            Act.game_id == game_id,
+        )
+        .options(selectinload(Event.beat))
+    )
+    event = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event.beat.author_id != current_user_id:
+        raise HTTPException(
+            status_code=403, detail="Only the beat author can act on prose suggestions"
+        )
+    return event
+
+
+@router.post(
+    "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/events/{event_id}/prose/apply",
+    response_class=RedirectResponse,
+)
+async def apply_prose(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    beat_id: int,
+    event_id: int,
+    custom_text: str | None = Form(default=None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Apply the AI prose suggestion (or a custom edit of it) to a narrative event."""
+    event = await _load_event_for_prose(
+        event_id, beat_id, scene_id, act_id, game_id, current_user.id, db
+    )
+    if event.prose_expanded is None:
+        raise HTTPException(status_code=409, detail="No prose suggestion available for this event")
+    if custom_text and custom_text.strip():
+        event.prose_expanded = custom_text.strip()
+    event.prose_applied = True
+    await db.commit()
+    return RedirectResponse(
+        url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", status_code=303
+    )
+
+
+@router.post(
+    "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats/{beat_id}/events/{event_id}/prose/dismiss",
+    response_class=RedirectResponse,
+)
+async def dismiss_prose(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    beat_id: int,
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Dismiss the AI prose suggestion for a narrative event."""
+    event = await _load_event_for_prose(
+        event_id, beat_id, scene_id, act_id, game_id, current_user.id, db
+    )
+    event.prose_dismissed = True
+    await db.commit()
+    return RedirectResponse(
+        url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", status_code=303
     )

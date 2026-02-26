@@ -221,3 +221,23 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 - After `silence_timer_hours` have elapsed from the spotlight beat, the banner and ⏳ indicators no longer appear (spotlight expired).
 - If no characters other than Alice's are present in the scene, the "Spotlight" dropdown does not appear.
 **Severity if broken:** P2
+
+---
+
+## 24. Prose expansion (REQ-PROSE-001)
+
+**Preconditions:** Active scene. Alice's account has prose_mode set to "always" (the default). At least one character is present in the scene.
+**Actions:**
+1. Alice submits a beat with a narrative event.
+2. Wait for the background task to run (a few seconds; the beat timeline polls automatically).
+3. Alice observes the scene page.
+**Pass criteria:**
+- The beat is submitted immediately and appears in the timeline (minor → canon, major → voting) without delay.
+- Within a few seconds, an amber "Prose suggestion" panel appears inline below Alice's narrative text, visible only to Alice.
+- The panel shows the AI-generated prose text, an "Apply" button, an "Edit & Apply" disclosure, and a "Dismiss" button.
+- Clicking "Apply" replaces the displayed beat text with the prose version. A small "edited" label appears. A collapsed "Show original" disclosure beneath it reveals the original submitted text.
+- Other players (Bob) see the updated text with the "edited" label on their next poll; they do not see the suggestion panel.
+- Clicking "Dismiss" removes the suggestion panel; the original text remains unchanged.
+- Clicking "Edit & Apply" allows Alice to modify the prose before applying; the edited version is stored and displayed.
+- If Alice's prose_mode is "never", no suggestion panel appears for any beat.
+**Severity if broken:** P1

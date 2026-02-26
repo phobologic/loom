@@ -441,3 +441,31 @@ async def revoke_invite(
     game.invite_token = None
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+
+
+@router.post("/games/{game_id}/prose-preference", response_class=RedirectResponse)
+async def update_prose_preference(
+    game_id: int,
+    prose_mode_override: str = Form(default=""),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Update the current player's per-game prose suggestion preference."""
+    result = await db.execute(
+        select(Game).where(Game.id == game_id).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    valid_overrides = {"", "always", "never", "threshold"}
+    if prose_mode_override not in valid_overrides:
+        raise HTTPException(status_code=422, detail="Invalid prose mode")
+
+    current_member.prose_mode_override = prose_mode_override or None
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}", status_code=303)

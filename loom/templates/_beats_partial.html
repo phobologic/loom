@@ -109,7 +109,40 @@
     <div style="margin-top:0.4rem; padding:0.3rem 0.5rem; border-left:3px solid {% if event.type.value == 'ooc' %}#999{% else %}#4a7fc1{% endif %}; background:{% if event.type.value == 'ooc' %}#f5f5f5{% else %}#f8fbff{% endif %};">
       <span style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:0.05em;">{{ event.type.value | replace("_", " ") }}</span>
       {% if event.type.value == "narrative" %}
+      {# Display text: prose version if applied, else original #}
+      {% if event.prose_applied %}
+      <p style="margin:0.2rem 0 0;">{{ event.prose_expanded }}</p>
+      <span style="font-size:0.72rem; color:#888; font-style:italic;">edited</span>
+      <details style="margin-top:0.25rem;">
+        <summary style="font-size:0.75rem; color:#aaa; cursor:pointer;">Show original</summary>
+        <p style="margin:0.3rem 0 0; font-size:0.87rem; color:#777; font-style:italic;">{{ event.content }}</p>
+      </details>
+      {% else %}
       <p style="margin:0.2rem 0 0;">{{ event.content }}</p>
+      {% endif %}
+      {# Prose suggestion panel — only shown to the beat author while suggestion is pending #}
+      {% set is_beat_author = (current_user_id is defined and beat.author_id == current_user_id) %}
+      {% if is_beat_author and event.prose_expanded and not event.prose_applied and not event.prose_dismissed %}
+      {% set prose_apply_url = "/games/" ~ game.id ~ "/acts/" ~ act.id ~ "/scenes/" ~ scene.id ~ "/beats/" ~ beat.id ~ "/events/" ~ event.id ~ "/prose/apply" %}
+      {% set prose_dismiss_url = "/games/" ~ game.id ~ "/acts/" ~ act.id ~ "/scenes/" ~ scene.id ~ "/beats/" ~ beat.id ~ "/events/" ~ event.id ~ "/prose/dismiss" %}
+      <div style="margin-top:0.75rem; padding:0.6rem 0.75rem; border:1px solid #c07800; border-radius:4px; background:#fffdf0;">
+        <p style="margin:0 0 0.3rem; font-size:0.8rem; font-weight:bold; color:#7a5000; text-transform:uppercase; letter-spacing:0.04em;">Prose suggestion</p>
+        <p style="margin:0 0 0.5rem; font-size:0.92rem; color:#333;">{{ event.prose_expanded }}</p>
+        <form method="POST" action="{{ prose_apply_url }}" style="display:inline;">
+          <button type="submit" style="font-size:0.8rem; padding:0.25rem 0.6rem; background:#c07800; color:#fff; border:none; border-radius:3px; cursor:pointer;">Apply</button>
+        </form>
+        <details style="display:inline-block; margin-left:0.5rem; vertical-align:top;">
+          <summary style="font-size:0.8rem; color:#7a5000; cursor:pointer;">Edit &amp; Apply</summary>
+          <form method="POST" action="{{ prose_apply_url }}" style="margin-top:0.4rem;">
+            <textarea name="custom_text" rows="4" style="width:100%; font-size:0.87rem; padding:0.3rem; border:1px solid #c8a040; border-radius:3px; box-sizing:border-box;">{{ event.prose_expanded }}</textarea>
+            <button type="submit" style="font-size:0.8rem; padding:0.2rem 0.5rem; background:#c07800; color:#fff; border:none; border-radius:3px; cursor:pointer; margin-top:0.25rem;">Apply edited version</button>
+          </form>
+        </details>
+        <form method="POST" action="{{ prose_dismiss_url }}" style="display:inline; margin-left:0.5rem;">
+          <button type="submit" style="font-size:0.8rem; padding:0.25rem 0.6rem; background:none; color:#999; border:1px solid #ccc; border-radius:3px; cursor:pointer;">Dismiss</button>
+        </form>
+      </div>
+      {% endif %}
       {% elif event.type.value == "roll" %}
       <p style="margin:0.2rem 0 0;">
         Roll <code>{{ event.roll_notation }}</code>: <strong>{{ event.roll_result }}</strong>

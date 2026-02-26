@@ -79,6 +79,20 @@
 {% endif %}
 
 <section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
+  <h2>Your Preferences for This Game</h2>
+  <form method="post" action="/games/{{ game.id }}/prose-preference">
+    <label for="prose_mode_override" style="font-size:0.9rem;">Prose suggestions:</label>
+    <select name="prose_mode_override" id="prose_mode_override" style="margin-left:0.4rem; font-size:0.9rem;">
+      <option value="" {% if not current_member.prose_mode_override %}selected{% endif %}>Use account default</option>
+      <option value="always" {% if current_member.prose_mode_override == "always" %}selected{% endif %}>Always</option>
+      <option value="never" {% if current_member.prose_mode_override == "never" %}selected{% endif %}>Never</option>
+      <option value="threshold" {% if current_member.prose_mode_override == "threshold" %}selected{% endif %}>Threshold only</option>
+    </select>
+    <button type="submit" style="margin-left:0.5rem; font-size:0.85rem;">Save</button>
+  </form>
+</section>
+
+<section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
   <h2>Acts</h2>
   {% if acts %}
   <ol>

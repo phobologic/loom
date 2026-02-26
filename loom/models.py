@@ -236,6 +236,12 @@ class User(TimestampMixin, Base):
     oauth_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     oauth_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notify_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    prose_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="always", server_default="always"
+    )
+    prose_threshold_words: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=50, server_default="50"
+    )
 
     memberships: Mapped[list[GameMember]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -335,6 +341,7 @@ class GameMember(TimestampMixin, Base):
     role: Mapped[MemberRole] = mapped_column(
         Enum(MemberRole, native_enum=False), nullable=False, default=MemberRole.player
     )
+    prose_mode_override: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="members")
     user: Mapped[User] = relationship(back_populates="memberships")
@@ -508,6 +515,15 @@ class Event(TimestampMixin, Base):
     # Oracle discussion fields
     oracle_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     oracle_selected_interpretation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Prose expansion fields (REQ-PROSE-001)
+    prose_expanded: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prose_applied: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    prose_dismissed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
 
     beat: Mapped[Beat] = relationship(back_populates="events")
     oracle_interpretation_votes: Mapped[list[OracleInterpretationVote]] = relationship(

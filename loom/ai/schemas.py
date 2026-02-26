@@ -51,6 +51,17 @@ class WorldDocumentResponse(BaseModel):
     )
 
 
+class ProseExpansion(BaseModel):
+    prose: str = Field(
+        description=(
+            "A polished, literary rewrite of the submitted beat text in third-person "
+            "collaborative-fiction prose. Preserve every fact, action, and event from the "
+            "original — only elevate the language and match the game's established narrative "
+            "voice. Do not introduce new events, characters, or information."
+        ),
+    )
+
+
 class TensionAdjustmentResponse(BaseModel):
     delta: Literal[-1, 0, 1] = Field(
         description=(

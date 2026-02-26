@@ -21,6 +21,30 @@
   </div>
 
   <div style="margin-top:1rem;">
+    <p style="margin:0 0 0.4rem; font-weight:bold;">Prose suggestions</p>
+    <p style="margin:0 0 0.5rem; font-size:0.87rem; color:#555;">When to offer an AI-generated prose expansion after you submit a beat.</p>
+    <label style="display:block; margin-bottom:0.25rem;">
+      <input type="radio" name="prose_mode" value="always"
+             {% if profile_user.prose_mode == "always" %}checked{% endif %}>
+      Always suggest
+    </label>
+    <label style="display:block; margin-bottom:0.25rem;">
+      <input type="radio" name="prose_mode" value="never"
+             {% if profile_user.prose_mode == "never" %}checked{% endif %}>
+      Never suggest
+    </label>
+    <label style="display:block; margin-bottom:0.4rem;">
+      <input type="radio" name="prose_mode" value="threshold"
+             {% if profile_user.prose_mode == "threshold" %}checked{% endif %}>
+      Only when beat is under
+      <input type="number" name="prose_threshold_words" min="1" max="500"
+             value="{{ profile_user.prose_threshold_words }}"
+             style="width:4rem; margin:0 0.25rem;">
+      words
+    </label>
+  </div>
+
+  <div style="margin-top:1rem;">
     <button type="submit">Save</button>
   </div>
 </form>

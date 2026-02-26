@@ -40,6 +40,8 @@ async def update_profile(
     request: Request,
     display_name: str = Form(...),
     notify_enabled: bool = Form(False),
+    prose_mode: str = Form(default="always"),
+    prose_threshold_words: int = Form(default=50),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -48,5 +50,8 @@ async def update_profile(
     if display_name:
         current_user.display_name = display_name
     current_user.notify_enabled = notify_enabled
+    if prose_mode in ("always", "never", "threshold"):
+        current_user.prose_mode = prose_mode
+    current_user.prose_threshold_words = max(1, prose_threshold_words)
     await db.commit()
     return RedirectResponse(url="/profile", status_code=303)

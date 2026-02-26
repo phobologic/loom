@@ -25,6 +25,7 @@ from loom.ai.provider import UsageInfo, get_provider
 from loom.ai.schemas import (
     BeatClassification,
     OracleResponse,
+    ProseExpansion,
     SynthesisResponse,
     TensionAdjustmentResponse,
     WorldDocumentResponse,
@@ -380,3 +381,66 @@ async def evaluate_tension_adjustment(
         )
 
     return response.delta, response.rationale
+
+
+async def expand_beat_prose(
+    game: Game,
+    scene: Scene,
+    beat_text: str,
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> str:
+    """Generate a polished prose expansion of a submitted beat's narrative text.
+
+    Args:
+        game: Fully loaded game (world_document, safety_tools, members loaded).
+        scene: Current scene (act, characters_present, beats with events loaded).
+        beat_text: The raw narrative text submitted by the player.
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        A polished prose string matching the game's narrative voice.
+    """
+    scene_ctx = assemble_scene_context(game, scene)
+    tension_ctx = format_tension_context(scene.tension)
+    context_comps = scene_context_components(game, scene)
+
+    system = (
+        "You are a prose editor for a collaborative tabletop RPG. "
+        "Your role is to take a player's raw beat submission and rewrite it as polished, "
+        "literary collaborative-fiction prose — third person, present tense, matching the "
+        "game's established narrative voice and the character's voice notes if provided. "
+        "Preserve every fact, action, and event from the original. "
+        "Do not introduce new events, characters, or information not present in the original. "
+        "Do not contradict the story context. Respect all safety tool boundaries."
+    )
+
+    prompt = (
+        f"{scene_ctx}\n\n"
+        f"{tension_ctx}\n\n"
+        f"PLAYER'S SUBMITTED BEAT:\n{beat_text}\n\n"
+        "Rewrite the beat as polished prose. Match the narrative voice of the game world above."
+    )
+
+    model = settings.ai_model_creative
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt=prompt,
+        model=model,
+        max_tokens=512,
+        response_model=ProseExpansion,
+    )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="expand_beat_prose",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
+    return response.prose
