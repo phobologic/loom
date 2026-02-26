@@ -425,6 +425,7 @@ class Beat(TimestampMixin, Base):
     )
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     challenge_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    challenge_outcome: Mapped[str | None] = mapped_column(String(50), nullable=True)
     challenged_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

@@ -1,6 +1,6 @@
 ---
 id: loo-pggr
-status: open
+status: closed
 deps: [loo-1u6r]
 links: []
 created: 2026-02-26T20:09:47Z

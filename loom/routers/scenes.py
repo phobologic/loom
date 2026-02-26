@@ -1110,9 +1110,8 @@ async def accept_challenge(
     )
     db.add(new_event)
 
-    # Clear challenge fields and re-enter approval as a major beat
-    beat.challenge_reason = None
-    beat.challenged_by_id = None
+    # Record outcome; preserve challenge_reason and challenged_by for history display
+    beat.challenge_outcome = "accepted_revision"
     beat.status = BeatStatus.proposed
     beat.significance = BeatSignificance.major
 
@@ -1176,8 +1175,8 @@ async def dismiss_challenge(
 
     challenger_id = beat.challenged_by_id
     beat.status = BeatStatus.canon
-    beat.challenge_reason = None
-    beat.challenged_by_id = None
+    # Record outcome; preserve challenge_reason and challenged_by for history display
+    beat.challenge_outcome = "dismissed"
 
     scene_link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
 

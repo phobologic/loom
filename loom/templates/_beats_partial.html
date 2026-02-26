@@ -343,6 +343,36 @@
     <p style="margin:0.25rem 0 0; color:#aaa; font-style:italic; font-size:0.85rem;">(no events)</p>
     {% endif %}
 
+    {# Collapsed challenge history (shown after resolution) #}
+    {% if beat.challenge_reason and beat.challenge_outcome %}
+    <details style="margin-top:0.6rem;">
+      <summary style="font-size:0.8rem; color:#888; cursor:pointer;">Challenge history</summary>
+      <div style="margin-top:0.4rem; padding:0.5rem 0.6rem; background:#f7f7f7; border-left:2px solid #ccc; font-size:0.82rem; color:#666;">
+        <p style="margin:0 0 0.25rem;">
+          Challenged{% if beat.challenged_by %} by <strong>{{ beat.challenged_by.display_name }}</strong>{% endif %}:
+          <em>{{ beat.challenge_reason }}</em>
+        </p>
+        {% if beat.challenge_outcome == 'dismissed' %}
+        <p style="margin:0; color:#555;">Resolved: <strong>dismissed</strong> — beat stands as written.</p>
+        {% elif beat.challenge_outcome == 'accepted_revision' %}
+        <p style="margin:0; color:#555;">Resolved: <strong>accepted revision</strong> — beat was revised.</p>
+        {% endif %}
+        {% if beat.comments %}
+        <div style="margin-top:0.4rem; border-top:1px solid #ddd; padding-top:0.3rem;">
+          <div style="font-size:0.75rem; color:#999; margin-bottom:0.2rem; text-transform:uppercase; letter-spacing:0.04em;">Discussion</div>
+          <ul style="margin:0; padding-left:1rem;">
+            {% for c in beat.comments %}
+            <li style="margin-bottom:0.15rem;">
+              <strong>{{ c.author.display_name if c.author else "Anonymous" }}:</strong> {{ c.content }}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+    </details>
+    {% endif %}
+
     {# Challenge form for canon beats #}
     {% if beat.status.value == 'canon' %}
     <details style="margin-top:0.6rem;">
