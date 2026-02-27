@@ -1,6 +1,6 @@
 ---
 id: loo-ofqu
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-27T00:04:28Z

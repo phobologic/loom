@@ -1,35 +1,8 @@
 """Tests for dev auth routes and get_current_user dependency."""
 
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from httpx import AsyncClient
 
-from loom.database import get_db
-from loom.main import _DEV_USERS, app
-from loom.models import User
-
-
-@pytest_asyncio.fixture(loop_scope="module")
-async def client(db_engine):
-    async with db_engine.connect() as conn:
-        await conn.begin()
-
-        async with AsyncSession(bind=conn, join_transaction_mode="create_savepoint") as setup:
-            for name in _DEV_USERS:
-                setup.add(User(display_name=name))
-            await setup.commit()
-
-        async def override_get_db():
-            async with AsyncSession(bind=conn, join_transaction_mode="create_savepoint") as session:
-                yield session
-
-        app.dependency_overrides[get_db] = override_get_db
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-            yield c
-
-        app.dependency_overrides.pop(get_db, None)
-        await conn.rollback()
+from loom.main import _DEV_USERS
 
 
 class TestDevLoginPage:
