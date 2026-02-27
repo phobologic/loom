@@ -1,6 +1,6 @@
 ---
 id: loo-fvoc
-status: open
+status: closed
 deps: [loo-ofqu]
 links: []
 created: 2026-02-27T00:05:16Z
@@ -36,3 +36,9 @@ With:
 
 103 tests. This file will see the biggest absolute time improvement. Include before/after timings as a note on this ticket.
 
+
+## Notes
+
+**2026-02-27T03:38:38Z**
+
+Timing results: BEFORE (per-test engine): 267s (4m27s) / AFTER (shared fixtures): 61s (1m01s). 4.4x speedup. All 103 tests pass.
