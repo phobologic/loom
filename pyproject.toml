@@ -36,9 +36,10 @@ select = ["E", "F", "I"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "--disable-socket --allow-unix-socket"
+addopts = "--disable-socket --allow-unix-socket --durations=10 --fail-slow=2s"
 
 [dependency-groups]
 dev = [
+    "pytest-fail-slow>=0.6.0",
     "pytest-socket>=0.7.0",
 ]
