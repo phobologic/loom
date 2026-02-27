@@ -90,6 +90,17 @@
     </select>
     <button type="submit" style="margin-left:0.5rem; font-size:0.85rem;">Save</button>
   </form>
+
+  <form method="post" action="/games/{{ game.id }}/email-preference" style="margin-top:0.75rem;">
+    <label for="email_pref_override" style="font-size:0.9rem;">Email notifications:</label>
+    <select name="email_pref_override" id="email_pref_override" style="margin-left:0.4rem; font-size:0.9rem;">
+      <option value="" {% if not current_member.email_pref_override %}selected{% endif %}>Use account default</option>
+      <option value="immediate" {% if current_member.email_pref_override == "immediate" %}selected{% endif %}>Immediate</option>
+      <option value="digest" {% if current_member.email_pref_override == "digest" %}selected{% endif %}>Digest</option>
+      <option value="off" {% if current_member.email_pref_override == "off" %}selected{% endif %}>Off</option>
+    </select>
+    <button type="submit" style="margin-left:0.5rem; font-size:0.85rem;">Save</button>
+  </form>
 </section>
 
 <section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">

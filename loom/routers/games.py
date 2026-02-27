@@ -16,6 +16,7 @@ from loom.dependencies import get_current_user
 from loom.models import (
     Act,
     BeatSignificanceThreshold,
+    EmailPref,
     Game,
     GameMember,
     GameStatus,
@@ -467,5 +468,32 @@ async def update_prose_preference(
         raise HTTPException(status_code=422, detail="Invalid prose mode")
 
     current_member.prose_mode_override = prose_mode_override or None
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+
+
+@router.post("/games/{game_id}/email-preference", response_class=RedirectResponse)
+async def update_email_preference(
+    game_id: int,
+    email_pref_override: str = Form(default=""),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Update the current player's per-game email notification preference."""
+    result = await db.execute(
+        select(Game).where(Game.id == game_id).options(selectinload(Game.members))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if email_pref_override and email_pref_override not in {p.value for p in EmailPref}:
+        raise HTTPException(status_code=422, detail="Invalid email preference")
+
+    current_member.email_pref_override = email_pref_override or None
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}", status_code=303)

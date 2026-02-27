@@ -1,6 +1,6 @@
 ---
 id: loo-ld95
-status: open
+status: closed
 deps: [loo-t8pu]
 links: []
 created: 2026-02-26T05:20:40Z

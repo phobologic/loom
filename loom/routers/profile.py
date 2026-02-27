@@ -11,7 +11,7 @@ from starlette.requests import Request
 
 from loom.database import get_db
 from loom.dependencies import get_current_user
-from loom.models import GameMember, User
+from loom.models import EmailPref, GameMember, User
 from loom.rendering import templates
 
 router = APIRouter()
@@ -40,6 +40,7 @@ async def update_profile(
     request: Request,
     display_name: str = Form(...),
     notify_enabled: bool = Form(False),
+    email_pref: str = Form(default="digest"),
     prose_mode: str = Form(default="always"),
     prose_threshold_words: int = Form(default=50),
     current_user: User = Depends(get_current_user),
@@ -50,6 +51,8 @@ async def update_profile(
     if display_name:
         current_user.display_name = display_name
     current_user.notify_enabled = notify_enabled
+    if email_pref in {p.value for p in EmailPref}:
+        current_user.email_pref = EmailPref(email_pref)
     if prose_mode in ("always", "never", "threshold"):
         current_user.prose_mode = prose_mode
     current_user.prose_threshold_words = max(1, prose_threshold_words)

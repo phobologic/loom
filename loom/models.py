@@ -163,6 +163,14 @@ class WordSeedWordType(str, enum.Enum):
     descriptor = "descriptor"
 
 
+class EmailPref(str, enum.Enum):
+    """User email notification preference."""
+
+    immediate = "immediate"
+    digest = "digest"
+    off = "off"
+
+
 class NotificationType(str, enum.Enum):
     """Category of in-app notification."""
 
@@ -254,6 +262,9 @@ class User(TimestampMixin, Base):
     oauth_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     oauth_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notify_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    email_pref: Mapped[EmailPref] = mapped_column(
+        Enum(EmailPref, native_enum=False), nullable=False, default=EmailPref.digest
+    )
     prose_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="always", server_default="always"
     )
@@ -360,6 +371,7 @@ class GameMember(TimestampMixin, Base):
         Enum(MemberRole, native_enum=False), nullable=False, default=MemberRole.player
     )
     prose_mode_override: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    email_pref_override: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="members")
     user: Mapped[User] = relationship(back_populates="memberships")
@@ -888,6 +900,7 @@ class Notification(TimestampMixin, Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     link: Mapped[str | None] = mapped_column(String(500), nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    emailed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="notifications")
     game: Mapped[Game | None] = relationship()

@@ -21,6 +21,26 @@
   </div>
 
   <div style="margin-top:1rem;">
+    <p style="margin:0 0 0.4rem; font-weight:bold;">Email notifications</p>
+    <p style="margin:0 0 0.5rem; font-size:0.87rem; color:#555;">How often Loom emails you about game activity. Can be overridden per game.</p>
+    <label style="display:block; margin-bottom:0.25rem;">
+      <input type="radio" name="email_pref" value="immediate"
+             {% if profile_user.email_pref == "immediate" %}checked{% endif %}>
+      Immediate — email on every event
+    </label>
+    <label style="display:block; margin-bottom:0.25rem;">
+      <input type="radio" name="email_pref" value="digest"
+             {% if profile_user.email_pref == "digest" or not profile_user.email_pref %}checked{% endif %}>
+      Digest — batch emails (default)
+    </label>
+    <label style="display:block; margin-bottom:0.25rem;">
+      <input type="radio" name="email_pref" value="off"
+             {% if profile_user.email_pref == "off" %}checked{% endif %}>
+      Off — no emails
+    </label>
+  </div>
+
+  <div style="margin-top:1rem;">
     <p style="margin:0 0 0.4rem; font-weight:bold;">Prose suggestions</p>
     <p style="margin:0 0 0.5rem; font-size:0.87rem; color:#555;">When to offer an AI-generated prose expansion after you submit a beat.</p>
     <label style="display:block; margin-bottom:0.25rem;">
