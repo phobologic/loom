@@ -1,6 +1,6 @@
 ---
 id: loo-te24
-status: open
+status: closed
 deps: [loo-ofqu]
 links: []
 created: 2026-02-27T00:04:49Z
@@ -42,3 +42,9 @@ Record result AFTER:
 
 21 tests. Expected: 21 create_all/drop_all cycles replaced with 1 (module-scoped). Include both timings as a note on this ticket.
 
+
+## Notes
+
+**2026-02-27T00:42:22Z**
+
+Baseline: 1.67s (21 tests, 5.9s wall). After: 0.53s (4.1s wall). 3.2x speedup on test execution time.

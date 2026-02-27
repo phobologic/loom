@@ -1,12 +1,10 @@
 """ORM-level integration tests for Loom data models."""
 
 import pytest
-import pytest_asyncio
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from loom import models as _models  # noqa: F401 - registers models with Base.metadata
-from loom.database import Base
 from loom.models import (
     Act,
     ActStatus,
@@ -24,23 +22,6 @@ from loom.models import (
     SceneStatus,
     User,
 )
-
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-
-
-@pytest_asyncio.fixture
-async def db_session():
-    """Async session backed by an in-memory SQLite database."""
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with session_factory() as session:
-        yield session
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -88,15 +69,15 @@ async def _make_beat(session: AsyncSession, scene: Scene, author: User | None = 
 
 
 class TestUserModel:
-    async def test_create_user(self, db_session: AsyncSession):
-        user = await _make_user(db_session)
+    async def test_create_user(self, db: AsyncSession):
+        user = await _make_user(db)
         assert user.id is not None
         assert user.display_name == "Alice"
         assert user.email is None
         assert user.oauth_provider is None
 
-    async def test_user_has_timestamps(self, db_session: AsyncSession):
-        user = await _make_user(db_session)
+    async def test_user_has_timestamps(self, db: AsyncSession):
+        user = await _make_user(db)
         assert user.created_at is not None
         assert user.updated_at is not None
 
@@ -107,26 +88,26 @@ class TestUserModel:
 
 
 class TestGameModel:
-    async def test_create_game(self, db_session: AsyncSession):
-        game = await _make_game(db_session)
+    async def test_create_game(self, db: AsyncSession):
+        game = await _make_game(db)
         assert game.id is not None
         assert game.name == "Test Game"
         assert game.status == GameStatus.setup
         assert game.pitch is None
         assert game.invite_token is None
 
-    async def test_game_cascade_deletes_members(self, db_session: AsyncSession):
-        user = await _make_user(db_session)
-        game = await _make_game(db_session)
+    async def test_game_cascade_deletes_members(self, db: AsyncSession):
+        user = await _make_user(db)
+        game = await _make_game(db)
         member = GameMember(game_id=game.id, user_id=user.id, role=MemberRole.organizer)
-        db_session.add(member)
-        await db_session.flush()
+        db.add(member)
+        await db.flush()
         member_id = member.id
 
-        await db_session.delete(game)
-        await db_session.flush()
+        await db.delete(game)
+        await db.flush()
 
-        result = await db_session.get(GameMember, member_id)
+        result = await db.get(GameMember, member_id)
         assert result is None
 
 
@@ -136,22 +117,22 @@ class TestGameModel:
 
 
 class TestActModel:
-    async def test_create_act(self, db_session: AsyncSession):
-        game = await _make_game(db_session)
-        act = await _make_act(db_session, game)
+    async def test_create_act(self, db: AsyncSession):
+        game = await _make_game(db)
+        act = await _make_act(db, game)
         assert act.id is not None
         assert act.status == ActStatus.proposed
         assert act.order == 0
 
-    async def test_act_cascade_from_game(self, db_session: AsyncSession):
-        game = await _make_game(db_session)
-        act = await _make_act(db_session, game)
+    async def test_act_cascade_from_game(self, db: AsyncSession):
+        game = await _make_game(db)
+        act = await _make_act(db, game)
         act_id = act.id
 
-        await db_session.delete(game)
-        await db_session.flush()
+        await db.delete(game)
+        await db.flush()
 
-        result = await db_session.get(Act, act_id)
+        result = await db.get(Act, act_id)
         assert result is None
 
 
@@ -161,31 +142,31 @@ class TestActModel:
 
 
 class TestSceneModel:
-    async def test_create_scene_defaults(self, db_session: AsyncSession):
-        game = await _make_game(db_session)
-        act = await _make_act(db_session, game)
-        scene = await _make_scene(db_session, act)
+    async def test_create_scene_defaults(self, db: AsyncSession):
+        game = await _make_game(db)
+        act = await _make_act(db, game)
+        scene = await _make_scene(db, act)
         assert scene.tension == 5
         assert scene.status == SceneStatus.proposed
 
-    async def test_scene_tension_constraint(self, db_session: AsyncSession):
-        game = await _make_game(db_session)
-        act = await _make_act(db_session, game)
+    async def test_scene_tension_constraint(self, db: AsyncSession):
+        game = await _make_game(db)
+        act = await _make_act(db, game)
         bad_scene = Scene(act_id=act.id, guiding_question="Q", tension=10)
-        db_session.add(bad_scene)
+        db.add(bad_scene)
         with pytest.raises(IntegrityError):
-            await db_session.flush()
+            await db.flush()
 
-    async def test_scene_cascade_from_act(self, db_session: AsyncSession):
-        game = await _make_game(db_session)
-        act = await _make_act(db_session, game)
-        scene = await _make_scene(db_session, act)
+    async def test_scene_cascade_from_act(self, db: AsyncSession):
+        game = await _make_game(db)
+        act = await _make_act(db, game)
+        scene = await _make_scene(db, act)
         scene_id = scene.id
 
-        await db_session.delete(act)
-        await db_session.flush()
+        await db.delete(act)
+        await db.flush()
 
-        result = await db_session.get(Scene, scene_id)
+        result = await db.get(Scene, scene_id)
         assert result is None
 
 
@@ -195,42 +176,42 @@ class TestSceneModel:
 
 
 class TestBeatModel:
-    async def test_create_beat_defaults(self, db_session: AsyncSession):
-        game = await _make_game(db_session)
-        act = await _make_act(db_session, game)
-        scene = await _make_scene(db_session, act)
-        beat = await _make_beat(db_session, scene)
+    async def test_create_beat_defaults(self, db: AsyncSession):
+        game = await _make_game(db)
+        act = await _make_act(db, game)
+        scene = await _make_scene(db, act)
+        beat = await _make_beat(db, scene)
         assert beat.significance == BeatSignificance.minor
         assert beat.status == BeatStatus.proposed
         assert beat.order == 0
 
-    async def test_beat_cascade_from_scene(self, db_session: AsyncSession):
-        game = await _make_game(db_session)
-        act = await _make_act(db_session, game)
-        scene = await _make_scene(db_session, act)
-        beat = await _make_beat(db_session, scene)
+    async def test_beat_cascade_from_scene(self, db: AsyncSession):
+        game = await _make_game(db)
+        act = await _make_act(db, game)
+        scene = await _make_scene(db, act)
+        beat = await _make_beat(db, scene)
         beat_id = beat.id
 
-        await db_session.delete(scene)
-        await db_session.flush()
+        await db.delete(scene)
+        await db.flush()
 
-        result = await db_session.get(Beat, beat_id)
+        result = await db.get(Beat, beat_id)
         assert result is None
 
-    async def test_beat_author_set_null_on_user_delete(self, db_session: AsyncSession):
-        user = await _make_user(db_session)
-        game = await _make_game(db_session)
-        act = await _make_act(db_session, game)
-        scene = await _make_scene(db_session, act)
-        beat = await _make_beat(db_session, scene, author=user)
+    async def test_beat_author_set_null_on_user_delete(self, db: AsyncSession):
+        user = await _make_user(db)
+        game = await _make_game(db)
+        act = await _make_act(db, game)
+        scene = await _make_scene(db, act)
+        beat = await _make_beat(db, scene, author=user)
         beat_id = beat.id
         assert beat.author_id == user.id
 
-        await db_session.delete(user)
-        await db_session.flush()
-        db_session.expire_all()
+        await db.delete(user)
+        await db.flush()
+        db.expire_all()
 
-        refreshed = await db_session.get(Beat, beat_id)
+        refreshed = await db.get(Beat, beat_id)
         assert refreshed is not None
         assert refreshed.author_id is None
 
@@ -247,18 +228,18 @@ class TestEventModel:
         scene = await _make_scene(session, act)
         return await _make_beat(session, scene)
 
-    async def test_narrative_event(self, db_session: AsyncSession):
-        beat = await self._setup(db_session)
+    async def test_narrative_event(self, db: AsyncSession):
+        beat = await self._setup(db)
         event = Event(
             beat_id=beat.id, type=EventType.narrative, content="The hero enters.", order=0
         )
-        db_session.add(event)
-        await db_session.flush()
+        db.add(event)
+        await db.flush()
         assert event.id is not None
         assert event.type == EventType.narrative
 
-    async def test_roll_event(self, db_session: AsyncSession):
-        beat = await self._setup(db_session)
+    async def test_roll_event(self, db: AsyncSession):
+        beat = await self._setup(db)
         event = Event(
             beat_id=beat.id,
             type=EventType.roll,
@@ -266,23 +247,23 @@ class TestEventModel:
             roll_result=9,
             order=0,
         )
-        db_session.add(event)
-        await db_session.flush()
+        db.add(event)
+        await db.flush()
         assert event.roll_notation == "2d6+1"
         assert event.roll_result == 9
 
-    async def test_oracle_event_interpretations_property(self, db_session: AsyncSession):
-        beat = await self._setup(db_session)
+    async def test_oracle_event_interpretations_property(self, db: AsyncSession):
+        beat = await self._setup(db)
         event = Event(
             beat_id=beat.id, type=EventType.oracle, oracle_query="Will they survive?", order=0
         )
         event.interpretations = ["Yes, barely.", "No, but..."]
-        db_session.add(event)
-        await db_session.flush()
+        db.add(event)
+        await db.flush()
         assert event.interpretations == ["Yes, barely.", "No, but..."]
 
-    async def test_fortune_roll_event(self, db_session: AsyncSession):
-        beat = await self._setup(db_session)
+    async def test_fortune_roll_event(self, db: AsyncSession):
+        beat = await self._setup(db)
         event = Event(
             beat_id=beat.id,
             type=EventType.fortune_roll,
@@ -293,22 +274,22 @@ class TestEventModel:
             word_seed_descriptor="sudden",
             order=0,
         )
-        db_session.add(event)
-        await db_session.flush()
+        db.add(event)
+        await db.flush()
         assert event.fortune_roll_odds == "likely"
         assert event.word_seed_action == "strike"
 
-    async def test_events_cascade_from_beat(self, db_session: AsyncSession):
-        beat = await self._setup(db_session)
+    async def test_events_cascade_from_beat(self, db: AsyncSession):
+        beat = await self._setup(db)
         event = Event(beat_id=beat.id, type=EventType.narrative, content="Text", order=0)
-        db_session.add(event)
-        await db_session.flush()
+        db.add(event)
+        await db.flush()
         event_id = event.id
 
-        await db_session.delete(beat)
-        await db_session.flush()
+        await db.delete(beat)
+        await db.flush()
 
-        result = await db_session.get(Event, event_id)
+        result = await db.get(Event, event_id)
         assert result is None
 
 
@@ -318,46 +299,46 @@ class TestEventModel:
 
 
 class TestCharacterModel:
-    async def test_create_character(self, db_session: AsyncSession):
-        user = await _make_user(db_session)
-        game = await _make_game(db_session)
+    async def test_create_character(self, db: AsyncSession):
+        user = await _make_user(db)
+        game = await _make_game(db)
         char = Character(game_id=game.id, owner_id=user.id, name="Sir Reginald")
-        db_session.add(char)
-        await db_session.flush()
+        db.add(char)
+        await db.flush()
         assert char.id is not None
         assert char.name == "Sir Reginald"
 
-    async def test_character_owner_set_null_on_user_delete(self, db_session: AsyncSession):
-        user = await _make_user(db_session)
-        game = await _make_game(db_session)
+    async def test_character_owner_set_null_on_user_delete(self, db: AsyncSession):
+        user = await _make_user(db)
+        game = await _make_game(db)
         char = Character(game_id=game.id, owner_id=user.id, name="Sir Reginald")
-        db_session.add(char)
-        await db_session.flush()
+        db.add(char)
+        await db.flush()
         char_id = char.id
 
-        await db_session.delete(user)
-        await db_session.flush()
-        db_session.expire_all()
+        await db.delete(user)
+        await db.flush()
+        db.expire_all()
 
-        refreshed = await db_session.get(Character, char_id)
+        refreshed = await db.get(Character, char_id)
         assert refreshed is not None
         assert refreshed.owner_id is None
 
-    async def test_character_in_scene(self, db_session: AsyncSession):
-        user = await _make_user(db_session)
-        game = await _make_game(db_session)
-        act = await _make_act(db_session, game)
-        scene = await _make_scene(db_session, act)
+    async def test_character_in_scene(self, db: AsyncSession):
+        user = await _make_user(db)
+        game = await _make_game(db)
+        act = await _make_act(db, game)
+        scene = await _make_scene(db, act)
         char = Character(game_id=game.id, owner_id=user.id, name="Hero")
-        db_session.add(char)
-        await db_session.flush()
+        db.add(char)
+        await db.flush()
 
         # Must load the collection explicitly before mutating (async SQLAlchemy has no lazy loading)
-        await db_session.refresh(scene, ["characters_present"])
+        await db.refresh(scene, ["characters_present"])
         scene.characters_present.append(char)
-        await db_session.flush()
+        await db.flush()
 
-        await db_session.refresh(scene, ["characters_present"])
+        await db.refresh(scene, ["characters_present"])
         assert char in scene.characters_present
 
 
@@ -367,18 +348,18 @@ class TestCharacterModel:
 
 
 class TestFullGameFlow:
-    async def test_full_flow_and_cascade(self, db_session: AsyncSession):
+    async def test_full_flow_and_cascade(self, db: AsyncSession):
         # Build the full hierarchy
-        user = await _make_user(db_session)
-        game = await _make_game(db_session)
+        user = await _make_user(db)
+        game = await _make_game(db)
         member = GameMember(game_id=game.id, user_id=user.id, role=MemberRole.organizer)
-        db_session.add(member)
-        act = await _make_act(db_session, game)
-        scene = await _make_scene(db_session, act)
-        beat = await _make_beat(db_session, scene, author=user)
+        db.add(member)
+        act = await _make_act(db, game)
+        scene = await _make_scene(db, act)
+        beat = await _make_beat(db, scene, author=user)
         event = Event(beat_id=beat.id, type=EventType.narrative, content="Prologue.", order=0)
-        db_session.add(event)
-        await db_session.flush()
+        db.add(event)
+        await db.flush()
 
         event_id = event.id
         beat_id = beat.id
@@ -386,10 +367,10 @@ class TestFullGameFlow:
         act_id = act.id
 
         # Deleting game should cascade to everything
-        await db_session.delete(game)
-        await db_session.flush()
+        await db.delete(game)
+        await db.flush()
 
-        assert await db_session.get(Act, act_id) is None
-        assert await db_session.get(Scene, scene_id) is None
-        assert await db_session.get(Beat, beat_id) is None
-        assert await db_session.get(Event, event_id) is None
+        assert await db.get(Act, act_id) is None
+        assert await db.get(Scene, scene_id) is None
+        assert await db.get(Beat, beat_id) is None
+        assert await db.get(Event, event_id) is None

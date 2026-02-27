@@ -125,7 +125,11 @@ async def client(db_conn):
     """AsyncClient wired to the app with DB writes rolled back after each test."""
 
     async def override_get_db():
-        async with AsyncSession(bind=db_conn, join_transaction_mode="create_savepoint") as session:
+        async with AsyncSession(
+            bind=db_conn,
+            join_transaction_mode="create_savepoint",
+            expire_on_commit=False,
+        ) as session:
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
@@ -142,7 +146,11 @@ async def db(db_conn):
 
     Use this when a test needs to assert DB state written by an HTTP request.
     """
-    async with AsyncSession(bind=db_conn, join_transaction_mode="create_savepoint") as session:
+    async with AsyncSession(
+        bind=db_conn,
+        join_transaction_mode="create_savepoint",
+        expire_on_commit=False,
+    ) as session:
         yield session
 
 
