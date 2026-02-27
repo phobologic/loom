@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from loom.database import Base, get_db
-from loom.main import _DEV_USERS, app
 from loom.models import (
     Game,
     GameMember,
@@ -25,38 +23,6 @@ from loom.models import (
     WorldDocument,
 )
 
-_test_session_factory: async_sessionmaker | None = None
-
-
-@pytest.fixture
-async def client():
-    global _test_session_factory
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    _test_session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    async with _test_session_factory() as db:
-        for name in _DEV_USERS:
-            db.add(User(display_name=name))
-        await db.commit()
-
-    async def override_get_db():
-        async with _test_session_factory() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        yield c
-
-    app.dependency_overrides.pop(get_db, None)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
-    _test_session_factory = None
-
 
 async def _login(client: AsyncClient, user_id: int) -> None:
     await client.post("/dev/login", data={"user_id": str(user_id)}, follow_redirects=False)
@@ -70,52 +36,54 @@ async def _create_game(client: AsyncClient, name: str = "Test Game", pitch: str 
     return int(response.headers["location"].rsplit("/", 1)[-1])
 
 
-async def _add_member(game_id: int, user_id: int, role: MemberRole = MemberRole.player) -> None:
-    async with _test_session_factory() as db:
-        db.add(GameMember(game_id=game_id, user_id=user_id, role=role))
-        await db.commit()
+async def _add_member(
+    db: AsyncSession, game_id: int, user_id: int, role: MemberRole = MemberRole.player
+) -> None:
+    db.add(GameMember(game_id=game_id, user_id=user_id, role=role))
+    await db.commit()
 
 
-async def _skip_all_prompts(client: AsyncClient, game_id: int) -> None:
+async def _skip_all_prompts(client: AsyncClient, db: AsyncSession, game_id: int) -> None:
     """Seed and skip all Session 0 prompts."""
     await client.get(f"/games/{game_id}/session0", follow_redirects=False)
     while True:
-        async with _test_session_factory() as db:
-            result = await db.execute(
-                select(Session0Prompt)
-                .where(Session0Prompt.game_id == game_id)
-                .order_by(Session0Prompt.order)
-            )
-            prompts = list(result.scalars().all())
+        db.expire_all()
+        result = await db.execute(
+            select(Session0Prompt)
+            .where(Session0Prompt.game_id == game_id)
+            .order_by(Session0Prompt.order)
+        )
+        prompts = list(result.scalars().all())
         active = next((p for p in prompts if p.status == PromptStatus.active), None)
         if active is None:
             break
-        r = await client.post(f"/games/{game_id}/session0/{active.id}/skip", follow_redirects=False)
+        active_id = active.id
+        r = await client.post(f"/games/{game_id}/session0/{active_id}/skip", follow_redirects=False)
         assert r.status_code == 303
 
 
-async def _get_game(game_id: int) -> Game:
-    async with _test_session_factory() as db:
-        result = await db.execute(select(Game).where(Game.id == game_id))
-        return result.scalar_one()
+async def _get_game(db: AsyncSession, game_id: int) -> Game:
+    db.expire_all()
+    result = await db.execute(select(Game).where(Game.id == game_id))
+    return result.scalar_one()
 
 
-async def _get_world_doc(game_id: int) -> WorldDocument | None:
-    async with _test_session_factory() as db:
-        result = await db.execute(select(WorldDocument).where(WorldDocument.game_id == game_id))
-        return result.scalar_one_or_none()
+async def _get_world_doc(db: AsyncSession, game_id: int) -> WorldDocument | None:
+    db.expire_all()
+    result = await db.execute(select(WorldDocument).where(WorldDocument.game_id == game_id))
+    return result.scalar_one_or_none()
 
 
-async def _get_proposals(game_id: int) -> list[VoteProposal]:
-    async with _test_session_factory() as db:
-        result = await db.execute(select(VoteProposal).where(VoteProposal.game_id == game_id))
-        return list(result.scalars().all())
+async def _get_proposals(db: AsyncSession, game_id: int) -> list[VoteProposal]:
+    db.expire_all()
+    result = await db.execute(select(VoteProposal).where(VoteProposal.game_id == game_id))
+    return list(result.scalars().all())
 
 
-async def _get_votes(proposal_id: int) -> list[Vote]:
-    async with _test_session_factory() as db:
-        result = await db.execute(select(Vote).where(Vote.proposal_id == proposal_id))
-        return list(result.scalars().all())
+async def _get_votes(db: AsyncSession, proposal_id: int) -> list[Vote]:
+    db.expire_all()
+    result = await db.execute(select(Vote).where(Vote.proposal_id == proposal_id))
+    return list(result.scalars().all())
 
 
 # ---------------------------------------------------------------------------
@@ -124,45 +92,46 @@ async def _get_votes(proposal_id: int) -> list[Vote]:
 
 
 class TestCompleteSession0SinglePlayer:
-    async def _setup(self, client: AsyncClient) -> int:
+    async def _setup(self, client: AsyncClient, db: AsyncSession) -> int:
         """Create game (only organizer), skip all prompts, return game_id."""
         await _login(client, 1)
         game_id = await _create_game(client)
-        await _skip_all_prompts(client, game_id)
+        await _skip_all_prompts(client, db, game_id)
         return game_id
 
-    async def test_generates_world_document(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_generates_world_document(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        world_doc = await _get_world_doc(game_id)
+        world_doc = await _get_world_doc(db, game_id)
         assert world_doc is not None
         assert len(world_doc.content) > 0
 
-    async def test_creates_approved_proposal(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_creates_approved_proposal(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         assert len(proposals) == 1
         assert proposals[0].status == ProposalStatus.approved
         assert proposals[0].proposal_type == ProposalType.world_doc_approval
 
-    async def test_records_implicit_yes_vote(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_records_implicit_yes_vote(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
-        votes = await _get_votes(proposals[0].id)
+        proposals = await _get_proposals(db, game_id)
+        proposal_id = proposals[0].id
+        votes = await _get_votes(db, proposal_id)
         assert len(votes) == 1
         assert votes[0].choice == VoteChoice.yes
         assert votes[0].voter_id == 1  # user Alice (id=1)
 
-    async def test_game_status_becomes_active(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_game_status_becomes_active(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        game = await _get_game(game_id)
+        game = await _get_game(db, game_id)
         assert game.status == GameStatus.active
 
-    async def test_redirects_to_game_dashboard(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_redirects_to_game_dashboard(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         response = await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"] == f"/games/{game_id}"
@@ -182,36 +151,36 @@ class TestCompleteSession0SinglePlayer:
 
 
 class TestCompleteSession0MultiPlayer:
-    async def _setup(self, client: AsyncClient) -> int:
+    async def _setup(self, client: AsyncClient, db: AsyncSession) -> int:
         """Create game with 2 members, skip all prompts."""
         await _login(client, 1)
         game_id = await _create_game(client)
-        await _add_member(game_id, 2)  # Bob joins
-        await _skip_all_prompts(client, game_id)
+        await _add_member(db, game_id, 2)  # Bob joins
+        await _skip_all_prompts(client, db, game_id)
         return game_id
 
-    async def test_redirects_to_world_document(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_redirects_to_world_document(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         response = await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"] == f"/games/{game_id}/world-document"
 
-    async def test_proposal_remains_open(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_proposal_remains_open(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         assert proposals[0].status == ProposalStatus.open
 
-    async def test_game_remains_in_setup(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_game_remains_in_setup(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        game = await _get_game(game_id)
+        game = await _get_game(db, game_id)
         assert game.status == GameStatus.setup
 
-    async def test_second_vote_approves_game(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_second_vote_approves_game(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         proposal_id = proposals[0].id
 
         # Bob votes yes — should tip the threshold (2 of 2 players)
@@ -223,13 +192,13 @@ class TestCompleteSession0MultiPlayer:
         )
         assert response.status_code == 303
 
-        game = await _get_game(game_id)
+        game = await _get_game(db, game_id)
         assert game.status == GameStatus.active
 
-    async def test_no_vote_does_not_approve(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_no_vote_does_not_approve(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         proposal_id = proposals[0].id
 
         await _login(client, 2)
@@ -238,13 +207,15 @@ class TestCompleteSession0MultiPlayer:
             data={"choice": "no"},
             follow_redirects=False,
         )
-        game = await _get_game(game_id)
+        game = await _get_game(db, game_id)
         assert game.status == GameStatus.setup
 
-    async def test_suggest_modification_stores_suggestion(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_suggest_modification_stores_suggestion(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         proposal_id = proposals[0].id
 
         await _login(client, 2)
@@ -253,20 +224,20 @@ class TestCompleteSession0MultiPlayer:
             data={"choice": "suggest_modification", "suggestion": "Make it darker"},
             follow_redirects=False,
         )
-        votes = await _get_votes(proposal_id)
+        votes = await _get_votes(db, proposal_id)
         suggest_vote = next(v for v in votes if v.choice == VoteChoice.suggest_modification)
         assert suggest_vote.suggestion == "Make it darker"
 
-    async def test_cannot_vote_twice(self, client: AsyncClient) -> None:
+    async def test_cannot_vote_twice(self, client: AsyncClient, db: AsyncSession) -> None:
         """A player cannot cast a second vote on an open proposal."""
         # Need 3 players so the proposal stays open after Bob's first vote
         await _login(client, 1)
         game_id = await _create_game(client)
-        await _add_member(game_id, 2)
-        await _add_member(game_id, 3)
-        await _skip_all_prompts(client, game_id)
+        await _add_member(db, game_id, 2)
+        await _add_member(db, game_id, 3)
+        await _skip_all_prompts(client, db, game_id)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         proposal_id = proposals[0].id
 
         # Bob votes no (proposal still open — need 2 of 3 yes, only Alice voted yes so far)
@@ -284,10 +255,10 @@ class TestCompleteSession0MultiPlayer:
         )
         assert response.status_code == 409
 
-    async def test_non_member_cannot_vote(self, client: AsyncClient) -> None:
-        game_id = await self._setup(client)
+    async def test_non_member_cannot_vote(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         proposal_id = proposals[0].id
 
         await _login(client, 3)  # Charlie is not a member
@@ -298,16 +269,16 @@ class TestCompleteSession0MultiPlayer:
         )
         assert response.status_code == 403
 
-    async def test_three_player_threshold(self, client: AsyncClient) -> None:
+    async def test_three_player_threshold(self, client: AsyncClient, db: AsyncSession) -> None:
         """In a 3-player game, 2 yes votes should approve (2 > 1.5)."""
         await _login(client, 1)
         game_id = await _create_game(client)
-        await _add_member(game_id, 2)
-        await _add_member(game_id, 3)
-        await _skip_all_prompts(client, game_id)
+        await _add_member(db, game_id, 2)
+        await _add_member(db, game_id, 3)
+        await _skip_all_prompts(client, db, game_id)
 
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         proposal_id = proposals[0].id
 
         # Alice already voted (implicit yes). Bob votes yes → 2 of 3 = approved.
@@ -317,15 +288,17 @@ class TestCompleteSession0MultiPlayer:
             data={"choice": "yes"},
             follow_redirects=False,
         )
-        game = await _get_game(game_id)
+        game = await _get_game(db, game_id)
         assert game.status == GameStatus.active
 
-    async def test_idempotent_proposal_creation(self, client: AsyncClient) -> None:
+    async def test_idempotent_proposal_creation(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
         """Calling complete_session0 twice reuses the existing open proposal."""
-        game_id = await self._setup(client)
+        game_id = await self._setup(client, db)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         assert len(proposals) == 1  # only one proposal created
 
 
@@ -342,10 +315,10 @@ class TestWorldDocumentView:
         response = await client.get(f"/games/{game_id}/world-document", follow_redirects=False)
         assert response.status_code == 403
 
-    async def test_view_shows_world_document(self, client: AsyncClient) -> None:
+    async def test_view_shows_world_document(self, client: AsyncClient, db: AsyncSession) -> None:
         await _login(client, 1)
         game_id = await _create_game(client)
-        await _skip_all_prompts(client, game_id)
+        await _skip_all_prompts(client, db, game_id)
         await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
 
         response = await client.get(f"/games/{game_id}/world-document", follow_redirects=False)
@@ -384,22 +357,22 @@ class TestProposeReadyToPlay:
         )
         assert response.status_code == 303
 
-    async def test_single_player_auto_approves(self, client: AsyncClient) -> None:
+    async def test_single_player_auto_approves(self, client: AsyncClient, db: AsyncSession) -> None:
         await _login(client, 1)
         game_id = await _create_game(client, pitch="A world of fog")
         await client.post(f"/games/{game_id}/session0/propose-ready", follow_redirects=False)
-        game = await _get_game(game_id)
+        game = await _get_game(db, game_id)
         assert game.status == GameStatus.active
 
-    async def test_multi_player_opens_vote(self, client: AsyncClient) -> None:
+    async def test_multi_player_opens_vote(self, client: AsyncClient, db: AsyncSession) -> None:
         await _login(client, 1)
         game_id = await _create_game(client, pitch="A world of fog")
-        await _add_member(game_id, 2)
+        await _add_member(db, game_id, 2)
         response = await client.post(
             f"/games/{game_id}/session0/propose-ready", follow_redirects=False
         )
         assert response.headers["location"] == f"/games/{game_id}/world-document"
-        proposals = await _get_proposals(game_id)
+        proposals = await _get_proposals(db, game_id)
         assert proposals[0].proposal_type == ProposalType.ready_to_play
         assert proposals[0].status == ProposalStatus.open
 
@@ -436,26 +409,30 @@ class TestGameStateTransitions:
         await client.post(f"/games/{game_id}/session0/propose-ready", follow_redirects=False)
         return game_id
 
-    async def test_organizer_can_pause_active_game(self, client: AsyncClient) -> None:
+    async def test_organizer_can_pause_active_game(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
         game_id = await self._setup_active(client)
         response = await client.post(f"/games/{game_id}/pause", follow_redirects=False)
         assert response.status_code == 303
-        game = await _get_game(game_id)
+        game = await _get_game(db, game_id)
         assert game.status == GameStatus.paused
 
-    async def test_organizer_can_resume_paused_game(self, client: AsyncClient) -> None:
+    async def test_organizer_can_resume_paused_game(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
         game_id = await self._setup_active(client)
         await client.post(f"/games/{game_id}/pause", follow_redirects=False)
         response = await client.post(f"/games/{game_id}/resume", follow_redirects=False)
         assert response.status_code == 303
-        game = await _get_game(game_id)
+        game = await _get_game(db, game_id)
         assert game.status == GameStatus.active
 
-    async def test_organizer_can_archive_game(self, client: AsyncClient) -> None:
+    async def test_organizer_can_archive_game(self, client: AsyncClient, db: AsyncSession) -> None:
         game_id = await self._setup_active(client)
         response = await client.post(f"/games/{game_id}/archive", follow_redirects=False)
         assert response.status_code == 303
-        game = await _get_game(game_id)
+        game = await _get_game(db, game_id)
         assert game.status == GameStatus.archived
 
     async def test_cannot_pause_setup_game(self, client: AsyncClient) -> None:
@@ -469,9 +446,9 @@ class TestGameStateTransitions:
         response = await client.post(f"/games/{game_id}/resume", follow_redirects=False)
         assert response.status_code == 403
 
-    async def test_non_organizer_cannot_pause(self, client: AsyncClient) -> None:
+    async def test_non_organizer_cannot_pause(self, client: AsyncClient, db: AsyncSession) -> None:
         game_id = await self._setup_active(client)
-        await _add_member(game_id, 2)
+        await _add_member(db, game_id, 2)
         await _login(client, 2)
         response = await client.post(f"/games/{game_id}/pause", follow_redirects=False)
         assert response.status_code == 403
