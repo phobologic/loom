@@ -51,7 +51,16 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 6. Session 0 — contribute + synthesize
+## 6. Remove player
+
+**Preconditions:** Game exists with Alice as organizer and Bob as a player member.
+**Actions:** Alice navigates to the game detail page. Clicks the "Remove" link next to Bob. Sees the confirmation page showing Bob's name and a three-word passphrase. Types the passphrase into the input field. Submits.
+**Pass criteria:** Redirect back to the game detail page. Bob no longer appears in the member list. If Alice types the wrong passphrase, the page re-renders with "Incorrect code — try again" and Bob remains a member.
+**Severity if broken:** P1
+
+---
+
+## 7. Session 0 — contribute + synthesize
 
 **Preconditions:** 2-player game (Alice + Bob) in "Setup" status.
 **Actions:** Alice and Bob each submit a response to prompt 1. Alice clicks "Synthesize contributions".
@@ -61,7 +70,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 7. Session 0 — complete → game active
+## 8. Session 0 — complete → game active
 
 **Preconditions:** 2-player game. At least one prompt synthesized and accepted; remaining prompts skipped.
 **Actions:** Alice clicks "Generate World Document & Start Vote". Both players vote Yes.
@@ -70,7 +79,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 8. Character creation
+## 9. Character creation
 
 **Preconditions:** Active game with Alice and Bob as members.
 **Actions:** Alice creates a character with name and description. Bob creates a character.
@@ -79,7 +88,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 9. Act proposal + voting
+## 10. Act proposal + voting
 
 **Preconditions:** Active game with 2 players.
 **Actions:** Alice navigates to `/games/{id}/acts`, fills and submits the propose act form. Bob votes Yes.
@@ -88,7 +97,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 10. Scene proposal + voting
+## 11. Scene proposal + voting
 
 **Preconditions:** Active act. Both characters exist.
 **Actions:** Alice proposes a scene (guiding question, location, tension, both characters selected). Bob votes Yes.
@@ -97,7 +106,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 11. Narrative beat
+## 12. Narrative beat
 
 **Preconditions:** Active scene.
 **Actions:** Alice submits a narrative beat (text only, minor significance).
@@ -106,7 +115,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 12. Dice roll beat
+## 13. Dice roll beat
 
 **Preconditions:** Active scene.
 **Actions:** Alice clicks "+ Roll" to add a roll event, enters `2d6` notation and a reason, submits beat.
@@ -115,7 +124,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 13. Oracle invocation + selection
+## 14. Oracle invocation + selection
 
 **Preconditions:** Active scene.
 **Actions:** Alice clicks "+ Oracle". A word pair is shown. Alice enters a question and submits. Alice clicks "Select #1".
@@ -125,7 +134,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 14. Fortune roll
+## 15. Fortune roll
 
 **Preconditions:** Active scene.
 **Actions:** Bob navigates to fortune roll via "+ Fortune Roll" link. Enters a yes/no question, selects "Likely" odds, submits.
@@ -134,7 +143,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 15. Notifications
+## 16. Notifications
 
 **Preconditions:** Alice has submitted at least one beat in an active game that Bob is a member of.
 **Actions:** Bob navigates to `/notifications`.
@@ -143,7 +152,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 16. Scene completion
+## 17. Scene completion
 
 **Preconditions:** Active scene (from workflow 10). Alice is a member.
 **Actions:** Alice navigates to the scene detail page. Clicks "Propose Scene Completion". In a single-player game, auto-approves immediately. In a multi-player game, second player navigates to scene and votes yes.
@@ -152,7 +161,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 17. Act completion
+## 18. Act completion
 
 **Preconditions:** Active act with at least one complete scene (from workflow 16). Alice is a member.
 **Actions:** Alice navigates to the scenes list for the act (`/games/{id}/acts/{act_id}/scenes`). Clicks "Propose Act Completion". In a single-player game, auto-approves. In a multi-player game, second player votes yes.
@@ -161,7 +170,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 18. Tension adjustment on scene completion
+## 19. Tension adjustment on scene completion
 
 **Preconditions:** Scene has just been completed (workflow 16 done). In a multi-player game, all members present.
 **Actions:** After scene completion vote passes, navigate to the scene detail page. Observe the "Tension Adjustment" section with the AI's recommendation (+1/-1/0) and rationale explaining scene-level and arc-level reasoning. In a single-player game, tension adjusts automatically (no voting section). In a multi-player game, each player votes +1 (Escalate), 0 (Hold steady), or -1 (Ease tension). After all players have voted, reload the page.
@@ -170,7 +179,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 19. Challenge beat — author accepts and revises
+## 20. Challenge beat — author accepts and revises
 
 **Preconditions:** Active scene with a canon minor beat. Two members: Alice (beat author, user 1), Bob (user 2).
 **Actions:** Bob challenges Alice's beat with a reason. Alice navigates to the scene detail page. The beat shows `[Challenged]` with Bob's reason. Alice expands "Accept & revise", types revised content, and submits. In a 2-player game, Bob votes yes on the revised beat.
@@ -179,7 +188,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 20. Challenge beat — author dismisses, group can comment
+## 21. Challenge beat — author dismisses, group can comment
 
 **Preconditions:** Active scene with a canon minor beat. Two members: Alice (beat author, user 1), Bob (user 2).
 **Actions:** Bob challenges Alice's beat. Bob (or Alice) adds a comment via the comment form below the challenge. Alice navigates to the scene detail page, reads the comment, and clicks "Dismiss — beat stands as written."
@@ -188,7 +197,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 21. Consecutive beat nudge (REQ-PACE-001)
+## 22. Consecutive beat nudge (REQ-PACE-001)
 
 **Preconditions:** Active scene. Alice is a member. `max_consecutive_beats` setting is 3 (default). Alice has already submitted 2 consecutive IC beats with no beat by another player in between.
 **Actions:** Alice submits a third IC beat.
@@ -197,7 +206,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 22. Contribution visibility (REQ-PACE-002)
+## 23. Contribution visibility (REQ-PACE-002)
 
 **Preconditions:** Active scene with at least one IC beat posted by any player.
 **Actions:** Navigate to the scene detail page.
@@ -206,7 +215,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 23. Spotlight / Waiting for Response (REQ-PACE-003)
+## 24. Spotlight / Waiting for Response (REQ-PACE-003)
 
 **Preconditions:** Active scene with at least 2 characters present owned by different players (Alice owns Character A, Bob owns Character B).
 **Actions:**
@@ -224,7 +233,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 24. Prose expansion (REQ-PROSE-001)
+## 25. Prose expansion (REQ-PROSE-001)
 
 **Preconditions:** Active scene. Alice's account has prose_mode set to "always" (the default). At least one character is present in the scene.
 **Actions:**
@@ -244,7 +253,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 25. AI Pre-submission Consistency Check (REQ-BEAT-005)
+## 26. AI Pre-submission Consistency Check (REQ-BEAT-005)
 
 **Preconditions:** Active scene with at least one existing canon beat and a world document. Alice is a member.
 **Actions:**
@@ -264,7 +273,7 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 26. Fortune Roll — Oracle Follow-up Link (REQ-ORACLE-008)
+## 27. Fortune Roll — Oracle Follow-up Link (REQ-ORACLE-008)
 
 **Preconditions:** Active scene. A fortune roll beat has been submitted by Alice and has resolved (contest window expired). Alice is logged in.
 **Actions:**

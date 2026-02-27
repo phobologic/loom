@@ -32,6 +32,11 @@
     <li>
         {{ m.user.display_name }}
         {% if m.role.value == "organizer" %}<em>(organizer)</em>{% endif %}
+        {% if current_member.role.value == "organizer" and m.role.value != "organizer"
+             and game.status.value != "archived" %}
+        <a href="/games/{{ game.id }}/members/{{ m.user_id }}/remove"
+           style="font-size:0.8rem; margin-left:0.5rem;">Remove</a>
+        {% endif %}
     </li>
     {% endfor %}
 </ul>

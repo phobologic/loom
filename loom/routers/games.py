@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException
@@ -440,6 +441,210 @@ async def revoke_invite(
         raise HTTPException(status_code=403, detail="Only the organizer can revoke the invite link")
 
     game.invite_token = None
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}", status_code=303)
+
+
+_PASSPHRASE_WORDS = [
+    "ant",
+    "arc",
+    "ash",
+    "bay",
+    "bow",
+    "bud",
+    "cab",
+    "cap",
+    "cod",
+    "cup",
+    "dew",
+    "din",
+    "dot",
+    "drum",
+    "dusk",
+    "elm",
+    "eve",
+    "fan",
+    "fig",
+    "fin",
+    "fog",
+    "fox",
+    "gem",
+    "gust",
+    "hay",
+    "hem",
+    "hive",
+    "hob",
+    "hop",
+    "ice",
+    "ink",
+    "ivy",
+    "jar",
+    "jay",
+    "jet",
+    "jog",
+    "keg",
+    "key",
+    "kit",
+    "lab",
+    "lake",
+    "lamp",
+    "law",
+    "leaf",
+    "lip",
+    "log",
+    "loom",
+    "mast",
+    "mew",
+    "mint",
+    "mist",
+    "mop",
+    "mud",
+    "nap",
+    "net",
+    "oak",
+    "oar",
+    "orb",
+    "owl",
+    "paw",
+    "peg",
+    "pen",
+    "pie",
+    "pin",
+    "pod",
+    "puff",
+    "rag",
+    "ram",
+    "ray",
+    "reef",
+    "rim",
+    "rod",
+    "rook",
+    "rut",
+    "sap",
+    "silt",
+    "sip",
+    "slag",
+    "slab",
+    "sod",
+    "span",
+    "spit",
+    "stem",
+    "sun",
+    "tar",
+    "thorn",
+    "tide",
+    "tin",
+    "tip",
+    "tog",
+    "tow",
+    "tuft",
+    "urn",
+    "vale",
+    "vine",
+    "wax",
+    "web",
+    "wick",
+    "wit",
+    "yew",
+]
+
+
+def _generate_passphrase() -> str:
+    """Return a random three-word passphrase joined by hyphens, e.g. 'fox-drum-lake'."""
+    return "-".join(random.sample(_PASSPHRASE_WORDS, 3))
+
+
+@router.get("/games/{game_id}/members/{user_id}/remove", response_class=HTMLResponse)
+async def confirm_remove_player(
+    game_id: int,
+    user_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Show passphrase confirmation page before removing a player (organizer only)."""
+    result = await db.execute(
+        select(Game)
+        .where(Game.id == game_id)
+        .options(selectinload(Game.members).selectinload(GameMember.user))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can remove players")
+
+    if game.status == GameStatus.archived:
+        raise HTTPException(status_code=403, detail="Cannot remove players from an archived game")
+
+    target_member = _find_membership(game, user_id)
+    if target_member is None:
+        raise HTTPException(status_code=404, detail="Player not found in this game")
+
+    if target_member.role == MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Cannot remove the organizer")
+
+    passphrase = _generate_passphrase()
+    return templates.TemplateResponse(
+        request,
+        "confirm_remove_player.html",
+        {"game": game, "target_member": target_member, "passphrase": passphrase},
+    )
+
+
+@router.post(
+    "/games/{game_id}/members/{user_id}/remove",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+async def remove_player(
+    game_id: int,
+    user_id: int,
+    request: Request,
+    passphrase_expected: str = Form(...),
+    passphrase_entered: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse | RedirectResponse:
+    """Remove a player from a game after passphrase confirmation (organizer only)."""
+    result = await db.execute(
+        select(Game)
+        .where(Game.id == game_id)
+        .options(selectinload(Game.members).selectinload(GameMember.user))
+    )
+    game = result.scalar_one_or_none()
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can remove players")
+
+    if game.status == GameStatus.archived:
+        raise HTTPException(status_code=403, detail="Cannot remove players from an archived game")
+
+    target_member = _find_membership(game, user_id)
+    if target_member is None:
+        raise HTTPException(status_code=404, detail="Player not found in this game")
+
+    if target_member.role == MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Cannot remove the organizer")
+
+    if passphrase_entered.strip().lower() != passphrase_expected.strip().lower():
+        return templates.TemplateResponse(
+            request,
+            "confirm_remove_player.html",
+            {
+                "game": game,
+                "target_member": target_member,
+                "passphrase": passphrase_expected,
+                "error": "Incorrect code — try again",
+            },
+        )
+
+    await db.delete(target_member)
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}", status_code=303)
 

@@ -360,3 +360,146 @@ class TestInviteManagementRevoke:
 
         response = await client.post(f"/games/{game_id}/invite/revoke", follow_redirects=False)
         assert response.status_code == 403
+
+
+async def _join_game(client: AsyncClient, db: AsyncSession, game_id: int, user_id: int) -> None:
+    """Join a game as the given user via invite token. Restores login to user_id after joining."""
+    result = await db.execute(select(Game).where(Game.id == game_id))
+    token = result.scalar_one().invite_token
+    await client.post("/dev/logout", follow_redirects=False)
+    await _login(client, user_id)
+    await client.post(f"/invite/{token}", follow_redirects=False)
+
+
+@pytest.mark.usefixtures("client")
+class TestRemovePlayer:
+    async def test_confirm_page_loads(self, client: AsyncClient, db: AsyncSession) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await _join_game(client, db, game_id, 2)
+        await client.post("/dev/logout", follow_redirects=False)
+        await _login(client, 1)
+
+        response = await client.get(f"/games/{game_id}/members/2/remove", follow_redirects=False)
+        assert response.status_code == 200
+        assert "Bob" in response.text
+        # Passphrase is present in the page (three words joined by hyphens)
+        assert "-" in response.text
+
+    async def test_remove_player_succeeds(self, client: AsyncClient, db: AsyncSession) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await _join_game(client, db, game_id, 2)
+        await client.post("/dev/logout", follow_redirects=False)
+        await _login(client, 1)
+
+        # Fetch the confirmation page to get the passphrase
+        page = await client.get(f"/games/{game_id}/members/2/remove")
+        # Extract passphrase from the hidden input value
+        import re
+
+        match = re.search(r'name="passphrase_expected" value="([^"]+)"', page.text)
+        assert match, "passphrase_expected hidden field not found"
+        passphrase = match.group(1)
+
+        response = await client.post(
+            f"/games/{game_id}/members/2/remove",
+            data={"passphrase_expected": passphrase, "passphrase_entered": passphrase},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/games/{game_id}"
+
+        db.expire_all()
+        membership = await db.scalar(
+            select(GameMember).where(GameMember.game_id == game_id, GameMember.user_id == 2)
+        )
+        assert membership is None
+
+    async def test_wrong_passphrase_rejects(self, client: AsyncClient, db: AsyncSession) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await _join_game(client, db, game_id, 2)
+        await client.post("/dev/logout", follow_redirects=False)
+        await _login(client, 1)
+
+        response = await client.post(
+            f"/games/{game_id}/members/2/remove",
+            data={
+                "passphrase_expected": "fox-drum-lake",
+                "passphrase_entered": "wrong-word-here",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 200
+        assert "Incorrect code" in response.text
+
+        db.expire_all()
+        membership = await db.scalar(
+            select(GameMember).where(GameMember.game_id == game_id, GameMember.user_id == 2)
+        )
+        assert membership is not None
+
+    async def test_remove_requires_organizer_get(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await _join_game(client, db, game_id, 2)
+        # Still logged in as user 2 (player)
+        response = await client.get(f"/games/{game_id}/members/1/remove", follow_redirects=False)
+        assert response.status_code == 403
+
+    async def test_remove_requires_organizer_post(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await _join_game(client, db, game_id, 2)
+        # Still logged in as user 2 (player)
+        response = await client.post(
+            f"/games/{game_id}/members/1/remove",
+            data={"passphrase_expected": "fox-drum-lake", "passphrase_entered": "fox-drum-lake"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    async def test_remove_requires_auth(self, client: AsyncClient) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await client.post("/dev/logout", follow_redirects=False)
+
+        response = await client.get(f"/games/{game_id}/members/2/remove", follow_redirects=False)
+        assert response.status_code == 302
+        assert "/login" in response.headers["location"]
+
+    async def test_cannot_remove_self_organizer(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+
+        response = await client.get(f"/games/{game_id}/members/1/remove", follow_redirects=False)
+        assert response.status_code == 403
+
+    async def test_cannot_remove_nonmember(self, client: AsyncClient, db: AsyncSession) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+
+        response = await client.get(f"/games/{game_id}/members/2/remove", follow_redirects=False)
+        assert response.status_code == 404
+
+    async def test_cannot_remove_from_archived_game(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await _join_game(client, db, game_id, 2)
+        await client.post("/dev/logout", follow_redirects=False)
+        await _login(client, 1)
+
+        # Archive the game
+        await client.post(f"/games/{game_id}/archive", follow_redirects=False)
+
+        response = await client.get(f"/games/{game_id}/members/2/remove", follow_redirects=False)
+        assert response.status_code == 403

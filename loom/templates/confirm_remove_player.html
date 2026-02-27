@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Remove Player — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>Remove Player</h1>
+<p>
+  Remove <strong>{{ target_member.user.display_name }}</strong>
+  from <em>{{ game.name }}</em>?
+</p>
+<p>This will end their participation and remove them from the member list.</p>
+
+{% if error %}
+<p style="color:red;">{{ error }}</p>
+{% endif %}
+
+<p>Type this code to confirm: <strong>{{ passphrase }}</strong></p>
+
+<form method="post" action="/games/{{ game.id }}/members/{{ target_member.user_id }}/remove">
+  <input type="hidden" name="passphrase_expected" value="{{ passphrase }}">
+  <input type="text" name="passphrase_entered" placeholder="{{ passphrase }}"
+         autocomplete="off" style="font-family:monospace;">
+  <button type="submit" style="margin-left:0.5rem;">Remove Player</button>
+</form>
+
+<p style="margin-top:1rem;"><a href="/games/{{ game.id }}">&larr; Cancel</a></p>
+{% endblock %}
