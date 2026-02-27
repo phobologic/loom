@@ -1,6 +1,6 @@
 ---
 id: loo-z8yh
-status: open
+status: closed
 deps: [loo-ofqu]
 links: []
 created: 2026-02-27T00:05:11Z
@@ -38,3 +38,9 @@ The db fixture is already an open session — no need for the async with wrapper
 
 30 tests in this file. Include before/after timings as a note on this ticket.
 
+
+## Notes
+
+**2026-02-27T03:44:14Z**
+
+Before: 30 passed in 4.1s wall / 8.4s real. After: 30 passed in 1.8s wall / 5.4s real. ~57% reduction in wall time, ~36% reduction in real time.
