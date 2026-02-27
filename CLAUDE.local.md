@@ -64,6 +64,45 @@ at all (dice, AI context), no fixture is needed.
 The fixtures use `StaticPool` + per-test transaction rollback (SQLite savepoints).
 Schema is created once per module. See `tests/conftest.py` for implementation.
 
+### Shared fixture pitfalls
+
+**Always call `db.expire_all()` before reading state that an HTTP request may have changed.**
+After `await client.post(...)`, ORM objects already loaded in `db`'s identity map are stale.
+`expire_all()` forces a fresh SELECT on next access.
+
+```python
+await client.post(f"/games/{game_id}/acts", ...)
+db.expire_all()                                      # ← required
+result = await db.execute(select(Act).where(...))
+act = result.scalar_one()
+assert act.status == ActStatus.active
+```
+
+**`expire_all()` removes `.id` from `__dict__` in SQLAlchemy 2.0** — even primary key
+columns. Capture object IDs into plain integers *before* calling any function that
+internally calls `expire_all()`, otherwise accessing `.id` on the expired object triggers
+a synchronous lazy load that fails with `MissingGreenlet`.
+
+```python
+# WRONG — target.id accessed after _get_prompt() called expire_all() internally
+updated = await _get_prompt(db, target.id)
+other = await _get_prompt(db, prompts[1].id)   # ← prompts[1].id fails
+
+# RIGHT — capture IDs first
+target_id = prompts[2].id
+neighbor_id = prompts[1].id
+updated = await _get_prompt(db, target_id)
+other = await _get_prompt(db, neighbor_id)
+```
+
+**Scope exact-count queries by `game_id`, not globally.** With StaticPool, data from
+other tests in the same module can occasionally be visible. `len(results) == 1` assertions
+will false-fail if a previous test left the same type of row behind.
+
+**Reference seeded users by ID, not `display_name`.** The dev users are Alice (id=1),
+Bob (id=2), Charlie (id=3). Querying `User.display_name == "Bob"` can return multiple
+rows when tests share the StaticPool connection.
+
 ## Alembic Migrations
 
 **Always verify the current head before writing a new migration.** Run `uv run alembic heads`
