@@ -1,6 +1,6 @@
 ---
 id: loo-odqx
-status: open
+status: closed
 deps: [loo-ofqu]
 links: []
 created: 2026-02-27T00:05:05Z
@@ -46,3 +46,9 @@ Note: db is a single session shared across all operations within a test. The ses
 
 28 tests in this file. Include before/after timings as a note on this ticket.
 
+
+## Notes
+
+**2026-02-27T03:47:53Z**
+
+Before: 2.45s (28 tests). After: 0.85s. ~3x speedup. Removed _test_session_factory global and local client fixture; replaced all async with _test_session_factory() as db: blocks with direct db fixture parameter usage; added db.expire_all() before re-reads after HTTP writes.

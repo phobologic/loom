@@ -1,6 +1,6 @@
 ---
 id: loo-1u6r
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-26T19:32:35Z

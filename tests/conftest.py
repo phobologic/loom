@@ -27,15 +27,36 @@ For tests with no DB at all (dice, AI context), no fixture is needed.
 
 from __future__ import annotations
 
+import unittest.mock
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from loom.ai.provider import AnthropicProvider
 from loom.database import Base, get_db
 from loom.main import _DEV_USERS, app
 from loom.models import User
+
+
+@pytest.fixture(autouse=True, scope="session")
+def block_real_ai():
+    """Fail fast if any test reaches the real Anthropic API provider.
+
+    This is a hard stop independent of .env — if a mock is missing, the test
+    gets a clear RuntimeError rather than a slow API call or an auth failure.
+    """
+
+    async def _blocked(*args, **kwargs):
+        raise RuntimeError(
+            "Real Anthropic API call attempted in tests — "
+            "add a mock for this function in conftest.mock_ai"
+        )
+
+    with unittest.mock.patch.object(AnthropicProvider, "generate_structured", new=_blocked):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -67,11 +88,16 @@ def mock_ai(monkeypatch):
     ):
         return []
 
+    async def _expand_beat_prose(game, scene, beat_text, *, db=None, game_id=None):
+        return None
+
     monkeypatch.setattr("loom.ai.client.oracle_interpretations", _oracle_interpretations)
     monkeypatch.setattr("loom.ai.client.session0_synthesis", _session0_synthesis)
     monkeypatch.setattr("loom.ai.client.generate_world_document", _generate_world_document)
     monkeypatch.setattr("loom.ai.client.check_beat_consistency", _check_beat_consistency)
     monkeypatch.setattr("loom.routers.scenes.check_beat_consistency", _check_beat_consistency)
+    monkeypatch.setattr("loom.ai.client.expand_beat_prose", _expand_beat_prose)
+    monkeypatch.setattr("loom.routers.scenes.expand_beat_prose", _expand_beat_prose)
 
     # Also patch the imported names in the routers so the monkeypatches take effect
     monkeypatch.setattr("loom.routers.oracles.ai_oracle_interpretations", _oracle_interpretations)

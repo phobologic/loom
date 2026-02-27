@@ -103,6 +103,28 @@ will false-fail if a previous test left the same type of row behind.
 Bob (id=2), Charlie (id=3). Querying `User.display_name == "Bob"` can return multiple
 rows when tests share the StaticPool connection.
 
+### Live service protection
+
+Tests run with `--disable-socket --allow-unix-socket` (set in `pyproject.toml`) and a
+session-scoped `block_real_ai` fixture (in `tests/conftest.py`). These are intentional:
+
+- **`--disable-socket`** blocks all TCP connections so tests can never reach external
+  services (Anthropic API, OAuth providers, etc.) regardless of what's in `.env`.
+- **`--allow-unix-socket`** carves out an exception for Unix domain sockets, which the
+  asyncio event loop needs internally (self-pipe wakeup). Without this, async tests fail
+  with `SocketBlockedError` from the event loop itself.
+- **`block_real_ai`** patches `AnthropicProvider.generate_structured` to raise a
+  `RuntimeError` with a clear message. Belt-and-suspenders on top of `--disable-socket`,
+  and gives a better signal than a raw socket error.
+
+If you see `pytest_socket.SocketBlockedError` in a test, the test (or a code path it
+exercises) is trying to open a TCP connection. The fix is to mock the relevant client,
+not to remove the socket flags.
+
+All AI functions must be mocked in `conftest.mock_ai`. Current stubs: `oracle_interpretations`,
+`session0_synthesis`, `generate_world_document`, `check_beat_consistency`, `expand_beat_prose`.
+If a new AI function is added to `loom/ai/client.py` and used in a route, add it there.
+
 ## Alembic Migrations
 
 **Always verify the current head before writing a new migration.** Run `uv run alembic heads`

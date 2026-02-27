@@ -1,6 +1,6 @@
 ---
 id: loo-p6xm
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-25T05:06:42Z

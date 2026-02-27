@@ -1,6 +1,6 @@
 ---
 id: loo-82fd
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-27T00:03:47Z

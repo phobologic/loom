@@ -1,6 +1,6 @@
 ---
 id: loo-9hbi
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-26T20:55:37Z

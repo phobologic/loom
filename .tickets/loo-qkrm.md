@@ -1,6 +1,6 @@
 ---
 id: loo-qkrm
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-25T04:49:28Z

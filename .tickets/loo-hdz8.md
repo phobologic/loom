@@ -1,6 +1,6 @@
 ---
 id: loo-hdz8
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-02-26T04:39:55Z
