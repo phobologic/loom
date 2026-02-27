@@ -357,6 +357,11 @@ class Game(TimestampMixin, Base):
         back_populates="game",
         cascade="all, delete-orphan",
     )
+    npcs: Mapped[list[NPC]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
+        order_by="NPC.name",
+    )
 
 
 class GameMember(TimestampMixin, Base):
@@ -605,6 +610,20 @@ class Character(TimestampMixin, Base):
         cascade="all, delete-orphan",
         order_by="CharacterUpdateSuggestion.created_at",
     )
+
+
+class NPC(TimestampMixin, Base):
+    """A non-player character tracked collaboratively by all game members."""
+
+    __tablename__ = "npcs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    game: Mapped[Game] = relationship(back_populates="npcs")
 
 
 class CharacterUpdateSuggestion(TimestampMixin, Base):

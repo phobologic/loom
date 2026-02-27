@@ -286,3 +286,23 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 - The oracle question textarea is pre-filled with the original fortune roll question.
 - Bob (non-invoker) viewing the same scene does not see the link.
 **Severity if broken:** P2
+
+---
+
+## 28. NPC creation and editing (REQ-NPC-001)
+
+**Preconditions:** Active game with Alice (organizer) and Bob (player) both logged in as members.
+**Actions:**
+1. Alice navigates to the game dashboard and clicks "NPCs" in the nav bar.
+2. Alice fills in name "Thornwick", description "A weathered innkeeper", notes "Knows dark secrets", and submits.
+3. Alice confirms Thornwick appears in the NPC list.
+4. Bob logs in, navigates to the same game's NPC page.
+5. Bob clicks "Edit" on Thornwick and changes the description to "A retired soldier turned innkeeper".
+6. Bob saves changes.
+**Pass criteria:**
+- The "NPCs" nav link is visible on the dashboard for active games and absent for games in setup.
+- Thornwick appears in the list after Alice creates it, with description and notes shown.
+- Bob can see Thornwick on the NPC page (shared visibility).
+- Bob's edit saves successfully and the updated description is shown immediately.
+- No ownership error — any member can edit any NPC.
+**Severity if broken:** P2

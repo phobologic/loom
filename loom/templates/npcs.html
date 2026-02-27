@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}NPCs — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>NPCs — {{ game.name }}</h1>
+<p><strong>Status:</strong> {{ game.status.value | capitalize }}</p>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="/games/{{ game.id }}">Dashboard</a> |
+    <a href="/games/{{ game.id }}/characters">Characters</a> |
+    <a href="/games/{{ game.id }}/npcs">NPCs</a> |
+    <a href="/games/{{ game.id }}/safety-tools">Safety Tools</a> |
+    <a href="/games/{{ game.id }}/world-document">World Doc</a> |
+    <a href="/games/{{ game.id }}/settings">Settings</a>
+</nav>
+
+{% if editing %}
+<section style="margin-top:1.5rem; padding:0.75rem; border:1px solid #999;">
+  <h2>Edit NPC: {{ editing.name }}</h2>
+  <form method="post" action="/games/{{ game.id }}/npcs/{{ editing.id }}/edit">
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-name"><strong>Name</strong> (required)</label><br>
+      <input id="edit-name" type="text" name="name" value="{{ editing.name }}" maxlength="100" required style="width:100%; max-width:400px;">
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-description"><strong>Description</strong></label><br>
+      <textarea id="edit-description" name="description" rows="4" style="width:100%; max-width:600px;">{{ editing.description or "" }}</textarea>
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-notes"><strong>Notes</strong></label><br>
+      <textarea id="edit-notes" name="notes" rows="3" style="width:100%; max-width:600px;">{{ editing.notes or "" }}</textarea>
+    </div>
+    <button type="submit">Save Changes</button>
+    <a href="/games/{{ game.id }}/npcs" style="margin-left:0.75rem;">Cancel</a>
+  </form>
+</section>
+{% endif %}
+
+<section style="margin-top:1.5rem;">
+  <h2>NPCs ({{ npcs | length }})</h2>
+  {% if npcs %}
+  <ul style="list-style:none; padding:0;">
+    {% for npc in npcs %}
+    <li style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd;">
+      <strong>{{ npc.name }}</strong>
+      {% if npc.description %}
+        <p style="margin:0.4rem 0 0;">{{ npc.description }}</p>
+      {% endif %}
+      {% if npc.notes %}
+        <p style="margin:0.25rem 0 0; color:#555;"><em>Notes: {{ npc.notes }}</em></p>
+      {% endif %}
+      {% if game.status.value != "archived" %}
+      <a href="/games/{{ game.id }}/npcs/{{ npc.id }}/edit" style="font-size:0.9em;">Edit</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No NPCs yet.</p>
+  {% endif %}
+</section>
+
+{% if not editing and game.status.value in ("active", "paused") %}
+<section style="margin-top:1.5rem; padding:0.75rem; border:1px solid #ccc;">
+  <h2>Add NPC</h2>
+  {% if game.status.value == "paused" %}
+  <p style="color:#888;"><em>The game is paused. NPC creation will resume when the game is active.</em></p>
+  {% else %}
+  <form method="post" action="/games/{{ game.id }}/npcs">
+    <div style="margin-bottom:0.5rem;">
+      <label for="name"><strong>Name</strong> (required)</label><br>
+      <input id="name" type="text" name="name" maxlength="100" required style="width:100%; max-width:400px;">
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="description"><strong>Description</strong></label><br>
+      <textarea id="description" name="description" rows="4" style="width:100%; max-width:600px;"></textarea>
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="notes"><strong>Notes</strong></label><br>
+      <textarea id="notes" name="notes" rows="3" style="width:100%; max-width:600px;"></textarea>
+    </div>
+    <button type="submit">Add NPC</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<p style="margin-top:1rem;"><a href="/games/{{ game.id }}">&larr; Dashboard</a></p>
+{% endblock %}
