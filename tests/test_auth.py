@@ -1,40 +1,35 @@
 """Tests for dev auth routes and get_current_user dependency."""
 
-import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from loom.database import Base, get_db
+from loom.database import get_db
 from loom.main import _DEV_USERS, app
 from loom.models import User
 
 
-@pytest.fixture
-async def client():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+@pytest_asyncio.fixture(loop_scope="module")
+async def client(db_engine):
+    async with db_engine.connect() as conn:
+        await conn.begin()
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        async with AsyncSession(bind=conn, join_transaction_mode="create_savepoint") as setup:
+            for name in _DEV_USERS:
+                setup.add(User(display_name=name))
+            await setup.commit()
 
-    async with session_factory() as db:
-        for name in _DEV_USERS:
-            db.add(User(display_name=name))
-        await db.commit()
+        async def override_get_db():
+            async with AsyncSession(bind=conn, join_transaction_mode="create_savepoint") as session:
+                yield session
 
-    async def override_get_db():
-        async with session_factory() as session:
-            yield session
+        app.dependency_overrides[get_db] = override_get_db
 
-    app.dependency_overrides[get_db] = override_get_db
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            yield c
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        yield c
-
-    app.dependency_overrides.pop(get_db, None)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+        app.dependency_overrides.pop(get_db, None)
+        await conn.rollback()
 
 
 class TestDevLoginPage:

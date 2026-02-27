@@ -29,6 +29,41 @@ Red flags to catch:
 When you catch one: name the principle, explain the conflict, and propose an alternative
 before proceeding.
 
+## Testing Conventions
+
+**Never create a per-test SQLite engine.** The `create_all` + seed + `drop_all` pattern
+costs ~71ms per test and compounds to minutes at scale.
+
+Use the shared fixtures from `tests/conftest.py` instead:
+
+| Fixture | What it gives you |
+|---------|------------------|
+| `client` | `AsyncClient` connected to the app; DB seeded with dev users; all writes rolled back after the test |
+| `db` | `AsyncSession` on the same transaction as `client` — use when you need to assert DB state after an HTTP request |
+
+```python
+# WRONG — never do this
+@pytest.fixture
+async def client():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)   # ← slow, runs per test
+    ...
+
+# RIGHT — just request the fixture
+async def test_create_game(client, db):
+    response = await client.post("/games", data={"name": "My Game"})
+    assert response.status_code == 303
+    game = await db.scalar(select(Game).where(Game.name == "My Game"))
+    assert game is not None
+```
+
+For pure unit tests with no HTTP layer, `db` can be used alone. For tests with no DB
+at all (dice, AI context), no fixture is needed.
+
+The fixtures use `StaticPool` + per-test transaction rollback (SQLite savepoints).
+Schema is created once per module. See `tests/conftest.py` for implementation.
+
 ## Alembic Migrations
 
 **Always verify the current head before writing a new migration.** Run `uv run alembic heads`
