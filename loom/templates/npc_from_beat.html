@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Add NPC — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>Add NPC — {{ game.name }}</h1>
+
+<nav>
+  <strong>Nav:</strong>
+  <a href="/games/{{ game.id }}">Dashboard</a> |
+  <a href="/games/{{ game.id }}/npcs">NPCs</a> |
+  <a href="/games/{{ game.id }}/characters">Characters</a>
+</nav>
+
+<div style="margin-top:1rem; padding:0.6rem 0.75rem; border:1px solid #c8d8f0; border-radius:4px; background:#f0f5ff; font-size:0.88rem; color:#334;">
+  <strong>What makes a good NPC entry?</strong>
+  The best NPCs have a <em>want</em> — an active goal they're pursuing that could affect play.
+  "The tavern keeper who wants to keep the peace" is more useful than "a tavern keeper."
+  You can always edit the entry later.
+</div>
+
+{% if beat_text %}
+<div style="margin-top:1rem; padding:0.6rem 0.75rem; border:1px solid #ddd; border-radius:4px; background:#fafafa;">
+  <div style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.3rem;">Beat context</div>
+  <p style="margin:0; font-size:0.9rem; color:#333;">{{ beat_text }}</p>
+</div>
+{% endif %}
+
+<form id="npc-form" method="post" action="/games/{{ game.id }}/npcs" style="margin-top:1.25rem;">
+  <div style="margin-bottom:0.75rem;">
+    <label for="npc-description" style="font-weight:bold;">Who is this person? <span style="color:#c00;">*</span></label><br>
+    <input id="npc-description" type="text" name="description" required
+      placeholder="The tavern keeper, an imperial spy, the guild master's enforcer…"
+      style="width:100%; max-width:520px; margin-top:0.2rem;">
+    <div style="font-size:0.78rem; color:#888; margin-top:0.2rem;">Describe their role. This is required.</div>
+  </div>
+
+  <div style="margin-bottom:0.75rem;">
+    <label for="npc-name" style="font-weight:bold;">Name</label>
+    <span style="font-size:0.82rem; color:#888; font-weight:normal;">(optional — AI can suggest)</span><br>
+    <input id="npc-name" type="text" name="name" maxlength="100"
+      placeholder="Leave blank to get AI name suggestions"
+      style="width:100%; max-width:360px; margin-top:0.2rem;">
+  </div>
+
+  <div style="margin-bottom:0.75rem;">
+    <label for="npc-notes" style="font-weight:bold;">What do they want?</label>
+    <span style="font-size:0.82rem; color:#888; font-weight:normal;">(optional — AI can suggest)</span><br>
+    <textarea id="npc-notes" name="notes" rows="2"
+      placeholder="Their active goal or motivation — leave blank to get AI suggestions"
+      style="width:100%; max-width:520px; margin-top:0.2rem;"></textarea>
+  </div>
+
+  <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap; margin-top:0.5rem;">
+    <button type="button"
+      hx-post="/games/{{ game.id }}/beats/{{ beat.id }}/npc/suggest"
+      hx-target="#suggestions-panel"
+      hx-swap="innerHTML"
+      hx-include="#npc-form"
+      style="background:#f0f5ff; border:1px solid #6a9fd8; color:#334; border-radius:3px; padding:0.3rem 0.75rem; cursor:pointer; font-size:0.88rem;">
+      Get AI ideas
+    </button>
+    <button type="submit"
+      style="background:#4a7fc1; color:#fff; border:none; border-radius:3px; padding:0.35rem 1rem; cursor:pointer; font-size:0.9rem;">
+      Create NPC
+    </button>
+    <a href="/games/{{ game.id }}/npcs" style="font-size:0.88rem; color:#888;">Cancel</a>
+  </div>
+</form>
+
+<div id="suggestions-panel" style="margin-top:1rem;"></div>
+
+<p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}/npcs">&larr; NPCs</a></p>
+{% endblock %}

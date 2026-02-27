@@ -36,7 +36,7 @@ Any player can manually create an NPC entry (name, description, notes). NPC entr
 
 ### Step 42: AI-Suggested NPC Entries
 
-The AI monitors beats for references to new named characters who aren't existing PCs or NPCs. When detected, the AI suggests creating an NPC entry with a proposed name, description, and notes based on their appearances in the fiction. Any player can approve, modify, or dismiss the suggestion.
+Any player can click "Add NPC" on a beat to open a focused NPC creation form showing the beat text as context. Three fields: "Who is this person?" (required), name (optional), want — their active goal (optional). If any optional field is blank, the player can click "Get AI ideas" to request suggestions (2-3 name options, 2-3 want options) generated from the beat content and world context. The player picks, edits, or ignores suggestions before confirming. AI runs only on explicit player request — no background monitoring. All game members are notified when a new NPC is created.
 
 **Requirements:** REQ-NPC-002
 

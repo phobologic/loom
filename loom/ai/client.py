@@ -26,6 +26,7 @@ from loom.ai.schemas import (
     BeatClassification,
     CharacterUpdateResponse,
     ConsistencyCheckResponse,
+    NPCDetailSuggestions,
     OracleResponse,
     ProseExpansion,
     SynthesisResponse,
@@ -522,6 +523,92 @@ async def check_beat_consistency(
         )
 
     return response.flags
+
+
+async def suggest_npc_details(
+    beat_text: str,
+    role: str,
+    *,
+    name: str | None = None,
+    want: str | None = None,
+    existing_pc_names: list[str] | None = None,
+    existing_npc_names: list[str] | None = None,
+    game: Game | None = None,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> tuple[list[str], list[str]]:
+    """Suggest name and/or want options for a new NPC based on a beat and player input.
+
+    Only suggests characters with complex motivations — a want or need they are
+    actively pursuing that could affect play. Simple threats are not good NPC candidates.
+
+    Args:
+        beat_text: The narrative text of the beat where the character appeared.
+        role: Required player-provided description of who the character is.
+        name: Player-provided name (empty string or None → suggest alternatives).
+        want: Player-provided want/goal (empty string or None → suggest alternatives).
+        existing_pc_names: PC names to avoid duplicating.
+        existing_npc_names: Existing NPC names to avoid duplicating.
+        game: Game instance for world document context (optional).
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        (name_suggestions, want_suggestions) — each a list of 0-3 strings.
+    """
+    system = (
+        "You are an NPC creation assistant for a collaborative tabletop RPG. "
+        "Help players fill in details for a new non-player character. "
+        "Focus on NPCs with complex motivations — a want or need they actively pursue "
+        "that could affect how play unfolds. Use the world's established tone and naming "
+        "conventions when suggesting names."
+    )
+
+    prompt_parts: list[str] = []
+
+    if game is not None and game.world_document and game.world_document.content:
+        prompt_parts.append(f"WORLD CONTEXT:\n{game.world_document.content}")
+
+    prompt_parts.append(f"BEAT TEXT:\n{beat_text}")
+    prompt_parts.append(f"WHO IS THIS CHARACTER: {role}")
+
+    if existing_pc_names or existing_npc_names:
+        all_names = (existing_pc_names or []) + (existing_npc_names or [])
+        prompt_parts.append(f"ALREADY TRACKED (do not suggest these): {', '.join(all_names)}")
+
+    if name:
+        prompt_parts.append(f"PLAYER-PROVIDED NAME: {name} (suggest alternatives if helpful)")
+    else:
+        prompt_parts.append("NAME: not yet provided — please suggest 2-3 options")
+
+    if want:
+        prompt_parts.append(f"PLAYER-PROVIDED WANT: {want} (suggest alternatives if helpful)")
+    else:
+        prompt_parts.append(
+            "WANT (active goal): not yet provided — please suggest 2-3 options. "
+            "Focus on what this character is actively pursuing that could affect the story, "
+            "not simple opposition or instinctive aggression."
+        )
+
+    model = settings.ai_model_classification
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt="\n\n".join(prompt_parts),
+        model=model,
+        max_tokens=400,
+        response_model=NPCDetailSuggestions,
+    )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="suggest_npc_details",
+            model=model,
+            usage=usage,
+            game_id=game_id,
+        )
+
+    return response.name_suggestions, response.want_suggestions
 
 
 async def suggest_character_updates(

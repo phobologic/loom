@@ -243,11 +243,14 @@ Game (settings, world document, members, active word seed tables)
 - Any player can edit any NPC entry.
 
 ### REQ-NPC-002: AI-Suggested NPC Entries
-*Requirement:* When new NPCs appear in the fiction, Loom shall use AI to suggest creating entries for them.
+*Requirement:* When new NPCs appear in the fiction, Loom shall use AI to suggest details for creating entries for them.
 *Acceptance Criteria:*
-- The AI monitors beats for references to new named characters who are not existing PCs or NPCs.
-- The AI suggests creating an NPC entry with a proposed name, description, and notes based on their appearances in the fiction.
-- Any player can approve, modify, or dismiss the suggestion.
+- Any player can initiate NPC creation directly from a specific beat.
+- The creation form shows the beat text for context and has three fields: role/description (required), name (optional), and want — their active goal (optional).
+- If any optional field is left blank, the player can request AI suggestions; the AI returns 2-3 options per blank field based on the beat content and world context.
+- The player picks, edits, or ignores AI suggestions before confirming creation.
+- An NPC's "want" is the primary quality marker — the AI prompt focuses on characters with complex motivations likely to affect play, not simple threats or minor opposition.
+- All game members are notified when a new NPC is created.
 
 ### REQ-WORLD-001: World Entry Tracking
 *Requirement:* Loom shall support shared, wiki-like entries for locations, factions, items, and other world elements.

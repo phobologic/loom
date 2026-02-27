@@ -306,3 +306,43 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 - Bob's edit saves successfully and the updated description is shown immediately.
 - No ownership error — any member can edit any NPC.
 **Severity if broken:** P2
+
+---
+
+## 29. NPC creation from beat — manual (REQ-NPC-002)
+
+**Preconditions:** Active game with Alice as a member. An active scene with at least one beat posted.
+**Actions:**
+1. Alice navigates to the scene detail page.
+2. Locates a beat in the timeline and clicks "Add NPC from this beat".
+3. On the NPC creation form, Alice fills in all three fields: "Who is this person?" → "The tavern keeper", Name → "Thornwick", "What do they want?" → "To keep his past buried".
+4. Alice clicks "Create NPC" (without using the AI suggest button).
+**Pass criteria:**
+- The "Add NPC from this beat" link is visible on beats for active/paused games and absent for setup-status games.
+- The NPC creation form shows the beat's narrative text in a context box.
+- After submission, Alice is redirected to `/games/{id}/npcs`.
+- Thornwick appears in the NPC list with the correct role/description and want/notes.
+- All other game members receive an "NPC created" notification.
+**Severity if broken:** P2
+
+---
+
+## 30. NPC creation from beat — AI assist (REQ-NPC-002)
+
+**Preconditions:** Active game with Alice as a member. An active scene with at least one beat containing narrative text.
+**Actions:**
+1. Alice clicks "Add NPC from this beat" on a beat.
+2. On the NPC creation form, Alice fills in only the "Who is this person?" field: "An imperial spy".
+3. Alice clicks "Get AI ideas".
+4. AI suggestions appear (name options and want options).
+5. Alice clicks a name suggestion to populate the Name field.
+6. Alice clicks a want suggestion to populate the "What do they want?" field.
+7. Alice clicks "Create NPC".
+**Pass criteria:**
+- Clicking "Get AI ideas" sends an HTMX request and populates the suggestions area without a full page reload.
+- Name suggestion pills appear; clicking one fills the Name input field.
+- Want suggestion pills appear; clicking one fills the "What do they want?" input field.
+- The player can edit the populated fields before submitting.
+- After submission, the NPC appears on the `/games/{id}/npcs` page with the selected name and want.
+- If AI is unavailable, the suggestions area shows a graceful "No suggestions available" message and does not block NPC creation.
+**Severity if broken:** P2

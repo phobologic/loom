@@ -411,6 +411,14 @@
     </details>
     {% endif %}
 
+    {# Add NPC link — available on any beat in an active or paused game #}
+    {% if game.status.value in ("active", "paused") %}
+    <div style="margin-top:0.5rem;">
+      <a href="/games/{{ game.id }}/beats/{{ beat.id }}/npc/new"
+         style="font-size:0.8rem; color:#6a9fd8;">+ Add NPC from this beat</a>
+    </div>
+    {% endif %}
+
     {# Challenge form for canon beats #}
     {% if beat.status.value == 'canon' %}
     <details style="margin-top:0.6rem;">

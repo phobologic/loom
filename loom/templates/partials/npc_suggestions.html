@@ -1,0 +1,37 @@
+{% if not name_suggestions and not want_suggestions %}
+<p style="font-size:0.85rem; color:#888; font-style:italic;">No suggestions available — try filling in "Who is this person?" with more detail.</p>
+{% else %}
+
+{% if name_suggestions %}
+<div style="margin-bottom:0.75rem;">
+  <div style="font-size:0.78rem; color:#555; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.35rem; font-weight:bold;">Name suggestions</div>
+  <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+    {% for suggestion in name_suggestions %}
+    <button type="button"
+      onclick="document.getElementById('npc-name').value = {{ suggestion | tojson }}; this.parentElement.querySelectorAll('button').forEach(b => b.style.background=''); this.style.background='#d0e8ff';"
+      style="font-size:0.85rem; padding:0.25rem 0.6rem; border:1px solid #6a9fd8; border-radius:3px; background:#f0f5ff; cursor:pointer; color:#334;">
+      {{ suggestion }}
+    </button>
+    {% endfor %}
+  </div>
+  <div style="font-size:0.75rem; color:#aaa; margin-top:0.2rem;">Click a suggestion to use it, or type your own in the Name field above.</div>
+</div>
+{% endif %}
+
+{% if want_suggestions %}
+<div>
+  <div style="font-size:0.78rem; color:#555; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.35rem; font-weight:bold;">What they want — suggestions</div>
+  <div style="display:flex; flex-direction:column; gap:0.35rem;">
+    {% for suggestion in want_suggestions %}
+    <button type="button"
+      onclick="document.getElementById('npc-notes').value = {{ suggestion | tojson }}; this.parentElement.querySelectorAll('button').forEach(b => b.style.background=''); this.style.background='#d0e8ff';"
+      style="font-size:0.85rem; padding:0.25rem 0.6rem; border:1px solid #6a9fd8; border-radius:3px; background:#f0f5ff; cursor:pointer; color:#334; text-align:left;">
+      {{ suggestion }}
+    </button>
+    {% endfor %}
+  </div>
+  <div style="font-size:0.75rem; color:#aaa; margin-top:0.2rem;">Click a suggestion to use it, or type your own in the "What do they want?" field above.</div>
+</div>
+{% endif %}
+
+{% endif %}

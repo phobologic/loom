@@ -187,6 +187,7 @@ class NotificationType(str, enum.Enum):
     beat_comment_added = "beat_comment_added"
     spotlight = "spotlight"
     character_update_suggested = "character_update_suggested"
+    npc_created = "npc_created"
 
 
 class CharacterUpdateCategory(str, enum.Enum):

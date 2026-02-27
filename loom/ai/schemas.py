@@ -122,6 +122,25 @@ class CharacterUpdateResponse(BaseModel):
     )
 
 
+class NPCDetailSuggestions(BaseModel):
+    name_suggestions: list[str] = Field(
+        max_length=3,
+        description=(
+            "2-3 name suggestions for this character based on their role and the beat context. "
+            "Match the world's naming conventions and tone. "
+            "Return an empty list if a name was already provided and no alternatives are needed."
+        ),
+    )
+    want_suggestions: list[str] = Field(
+        max_length=3,
+        description=(
+            "2-3 suggestions for what this character wants — an active goal or need they are "
+            "pursuing that could affect play. Each should be a single concrete sentence. "
+            "Return an empty list if a want was already provided and no alternatives are needed."
+        ),
+    )
+
+
 class TensionAdjustmentResponse(BaseModel):
     delta: Literal[-1, 0, 1] = Field(
         description=(
