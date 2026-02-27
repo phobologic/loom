@@ -63,6 +63,24 @@
       {% if game.status.value != "archived" %}
         {% if char.owner_id == current_user.id %}
         <a href="/games/{{ game.id }}/characters/{{ char.id }}/edit" style="font-size:0.9em;">Edit</a>
+        <a href="/games/{{ game.id }}/characters/{{ char.id }}/suggestions" style="font-size:0.9em; margin-left:0.5rem;">Suggestions</a>
+        {% endif %}
+      {% endif %}
+      {% if char.owner_id == current_user.id %}
+        {% set accepted_updates = char.update_suggestions | selectattr("status.value", "equalto", "accepted") | list %}
+        {% if accepted_updates %}
+        <details style="margin-top:0.6rem;">
+          <summary style="font-size:0.85rem; color:#555; cursor:pointer;">AI Updates ({{ accepted_updates | length }})</summary>
+          <ul style="margin:0.4rem 0 0; padding-left:1.2rem; font-size:0.88rem; color:#444;">
+            {% for u in accepted_updates %}
+            <li style="margin-bottom:0.4rem;">
+              <strong>{{ u.category.value | capitalize }}:</strong>
+              {{ u.applied_text or u.suggestion_text }}
+              <br><span style="font-size:0.8rem; color:#888; font-style:italic;">{{ u.reason }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
         {% endif %}
       {% endif %}
     </li>

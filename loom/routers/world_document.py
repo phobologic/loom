@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException
@@ -18,6 +20,9 @@ from loom.ai.client import (
 from loom.ai.client import (
     generate_world_document as _ai_generate_world_document,
 )
+from loom.ai.client import (
+    suggest_character_updates as _ai_suggest_character_updates,
+)
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
@@ -25,9 +30,14 @@ from loom.models import (
     ActStatus,
     Beat,
     BeatStatus,
+    Character,
+    CharacterUpdateCategory,
+    CharacterUpdateStatus,
+    CharacterUpdateSuggestion,
     Game,
     GameMember,
     GameStatus,
+    NotificationType,
     ProposalStatus,
     ProposalType,
     Scene,
@@ -39,6 +49,7 @@ from loom.models import (
     VoteProposal,
     WorldDocument,
 )
+from loom.notifications import create_notification
 from loom.rendering import templates
 from loom.voting import (
     activate_act,
@@ -198,6 +209,91 @@ async def _create_tension_adjustment_proposal(
     )
     db.add(tension_proposal)
     await db.flush()
+
+
+async def _suggest_character_updates_for_scene(
+    scene: Scene,
+    game: Game,
+    db: AsyncSession,
+) -> None:
+    """Generate AI character update suggestions for all owned characters after scene completion.
+
+    Runs per-character suggestion in parallel. AI failures are caught per-character
+    so one failure does not prevent others from receiving suggestions.
+    Scene completion is never rolled back by this function.
+    """
+    # Load scene with beats for AI context (re-query to get fresh state)
+    result = await db.execute(
+        select(Scene)
+        .where(Scene.id == scene.id)
+        .options(
+            selectinload(Scene.act),
+            selectinload(Scene.beats).selectinload(Beat.events),
+            selectinload(Scene.characters_present),
+        )
+    )
+    full_scene = result.scalar_one_or_none()
+    if full_scene is None:
+        return
+
+    # Only process owned characters (skip NPCs)
+    chars_result = await db.execute(
+        select(Character).where(
+            Character.game_id == game.id,
+            Character.owner_id.is_not(None),
+        )
+    )
+    owned_characters = list(chars_result.scalars().all())
+    if not owned_characters:
+        return
+
+    async def _process_one(character: Character) -> None:
+        try:
+            suggestions = await _ai_suggest_character_updates(
+                game,
+                full_scene,
+                character,
+                db=db,
+                game_id=game.id,
+            )
+        except Exception:
+            return  # AI failure must not abort scene completion
+
+        if not suggestions:
+            return
+
+        for category_str, text, reason, beat_ids in suggestions:
+            try:
+                category = CharacterUpdateCategory(category_str)
+            except ValueError:
+                continue
+            suggestion = CharacterUpdateSuggestion(
+                character_id=character.id,
+                scene_id=scene.id,
+                category=category,
+                suggestion_text=text,
+                reason=reason,
+                referenced_beat_ids=json.dumps(beat_ids) if beat_ids else None,
+                status=CharacterUpdateStatus.pending,
+            )
+            db.add(suggestion)
+
+        await db.flush()
+
+        if character.owner_id is not None:
+            await create_notification(
+                db,
+                user_id=character.owner_id,
+                game_id=game.id,
+                ntype=NotificationType.character_update_suggested,
+                message=(
+                    f"The AI has suggestions for {character.name}'s character sheet "
+                    f"based on the completed scene."
+                ),
+                link=f"/games/{game.id}/characters/{character.id}/suggestions",
+            )
+
+    await asyncio.gather(*[_process_one(c) for c in owned_characters])
 
 
 async def create_world_doc_and_proposal(
@@ -434,6 +530,7 @@ async def cast_vote(
         elif proposal.proposal_type == ProposalType.scene_complete and proposal.scene is not None:
             proposal.scene.status = SceneStatus.complete
             await _create_tension_adjustment_proposal(proposal.scene, game, db)
+            await _suggest_character_updates_for_scene(proposal.scene, game, db)
         elif proposal.proposal_type == ProposalType.act_complete and proposal.act is not None:
             proposal.act.status = ActStatus.complete
             for scene in proposal.act.scenes:

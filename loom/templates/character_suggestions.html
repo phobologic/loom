@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}AI Suggestions — {{ character.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>AI Suggestions for {{ character.name }}</h1>
+<p><em>{{ game.name }}</em></p>
+
+<nav>
+  <strong>Nav:</strong>
+  <a href="/games/{{ game.id }}">Dashboard</a> |
+  <a href="/games/{{ game.id }}/characters">Characters</a>
+</nav>
+
+<p style="margin-top:1rem; font-size:0.9rem; color:#555;">
+  The AI reviewed the completed scene and suggested the following additions to your character
+  sheet. Each suggestion is grounded in specific beats from the scene. You can accept (and
+  optionally edit the text before saving), or dismiss any suggestion.
+</p>
+
+{% if suggestions %}
+<div id="suggestions-list">
+{% for s in suggestions %}
+<div id="suggestion-{{ s.id }}" style="margin-top:1rem; padding:0.75rem; border:1px solid #ccc; border-radius:4px;">
+  <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:#888; margin-bottom:0.3rem; font-weight:bold;">
+    {{ s.category.value | capitalize }}
+  </div>
+  <p style="margin:0 0 0.4rem;">{{ s.suggestion_text }}</p>
+  <p style="margin:0 0 0.5rem; font-size:0.85rem; color:#666; font-style:italic;">
+    <strong>Reason:</strong> {{ s.reason }}
+  </p>
+  {% if s.beat_ids %}
+  <p style="margin:0 0 0.6rem; font-size:0.82rem; color:#888;">
+    {% if s.scene %}
+    Referenced beats:
+    {% for bid in s.beat_ids %}
+    <a href="/games/{{ game.id }}/acts/{{ s.scene.act_id }}/scenes/{{ s.scene.id }}#beat-{{ bid }}"
+       style="margin-right:0.4rem;">View beat #{{ bid }} &rarr;</a>
+    {% endfor %}
+    {% endif %}
+  </p>
+  {% endif %}
+
+  <form method="post"
+        action="/games/{{ game.id }}/characters/{{ character.id }}/suggestions/{{ s.id }}/accept"
+        hx-post="/games/{{ game.id }}/characters/{{ character.id }}/suggestions/{{ s.id }}/accept"
+        hx-target="#suggestion-{{ s.id }}"
+        hx-swap="outerHTML">
+    <div style="margin-bottom:0.4rem;">
+      <label for="applied-{{ s.id }}" style="font-size:0.85rem;">
+        Edit before accepting (optional):
+      </label><br>
+      <textarea id="applied-{{ s.id }}" name="applied_text" rows="3"
+                style="width:100%; max-width:540px; font-size:0.9rem; box-sizing:border-box;">{{ s.suggestion_text }}</textarea>
+    </div>
+    <button type="submit" style="margin-right:0.5rem; font-size:0.9rem;">Accept</button>
+  </form>
+
+  <form method="post"
+        action="/games/{{ game.id }}/characters/{{ character.id }}/suggestions/{{ s.id }}/dismiss"
+        hx-post="/games/{{ game.id }}/characters/{{ character.id }}/suggestions/{{ s.id }}/dismiss"
+        hx-target="#suggestion-{{ s.id }}"
+        hx-swap="outerHTML"
+        style="margin-top:0.3rem;">
+    <button type="submit" style="font-size:0.85rem; color:#888; background:none; border:1px solid #ccc; border-radius:3px; cursor:pointer; padding:0.2rem 0.5rem;">
+      Dismiss
+    </button>
+  </form>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<p style="margin-top:1.5rem; color:#888;"><em>No pending suggestions for this character.</em></p>
+<p><a href="/games/{{ game.id }}/characters/{{ character.id }}/edit">Edit character directly</a></p>
+{% endif %}
+
+<p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}/characters">&larr; Characters</a></p>
+{% endblock %}

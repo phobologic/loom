@@ -91,6 +91,9 @@ def mock_ai(monkeypatch):
     async def _expand_beat_prose(game, scene, beat_text, *, db=None, game_id=None):
         return None
 
+    async def _suggest_character_updates(game, scene, character, *, db=None, game_id=None):
+        return []
+
     monkeypatch.setattr("loom.ai.client.oracle_interpretations", _oracle_interpretations)
     monkeypatch.setattr("loom.ai.client.session0_synthesis", _session0_synthesis)
     monkeypatch.setattr("loom.ai.client.generate_world_document", _generate_world_document)
@@ -98,6 +101,10 @@ def mock_ai(monkeypatch):
     monkeypatch.setattr("loom.routers.scenes.check_beat_consistency", _check_beat_consistency)
     monkeypatch.setattr("loom.ai.client.expand_beat_prose", _expand_beat_prose)
     monkeypatch.setattr("loom.routers.scenes.expand_beat_prose", _expand_beat_prose)
+    monkeypatch.setattr("loom.ai.client.suggest_character_updates", _suggest_character_updates)
+    monkeypatch.setattr(
+        "loom.routers.world_document._ai_suggest_character_updates", _suggest_character_updates
+    )
 
     # Also patch the imported names in the routers so the monkeypatches take effect
     monkeypatch.setattr("loom.routers.oracles.ai_oracle_interpretations", _oracle_interpretations)

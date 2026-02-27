@@ -178,6 +178,24 @@ class NotificationType(str, enum.Enum):
     beat_revised = "beat_revised"
     beat_comment_added = "beat_comment_added"
     spotlight = "spotlight"
+    character_update_suggested = "character_update_suggested"
+
+
+class CharacterUpdateCategory(str, enum.Enum):
+    """Category of AI-suggested character update."""
+
+    relationship = "relationship"
+    trait = "trait"
+    item = "item"
+    goal = "goal"
+
+
+class CharacterUpdateStatus(str, enum.Enum):
+    """Lifecycle status of a character update suggestion."""
+
+    pending = "pending"
+    accepted = "accepted"
+    dismissed = "dismissed"
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +588,47 @@ class Character(TimestampMixin, Base):
     scenes_present: Mapped[list[Scene]] = relationship(
         secondary=scene_characters, back_populates="characters_present"
     )
+    update_suggestions: Mapped[list[CharacterUpdateSuggestion]] = relationship(
+        back_populates="character",
+        cascade="all, delete-orphan",
+        order_by="CharacterUpdateSuggestion.created_at",
+    )
+
+
+class CharacterUpdateSuggestion(TimestampMixin, Base):
+    """An AI-generated suggestion for updating a character sheet after a scene."""
+
+    __tablename__ = "character_update_suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    character_id: Mapped[int] = mapped_column(
+        ForeignKey("characters.id", ondelete="CASCADE"), nullable=False
+    )
+    scene_id: Mapped[int | None] = mapped_column(
+        ForeignKey("scenes.id", ondelete="SET NULL"), nullable=True
+    )
+    category: Mapped[CharacterUpdateCategory] = mapped_column(
+        Enum(CharacterUpdateCategory, native_enum=False), nullable=False
+    )
+    suggestion_text: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    referenced_beat_ids: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    applied_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[CharacterUpdateStatus] = mapped_column(
+        Enum(CharacterUpdateStatus, native_enum=False),
+        nullable=False,
+        default=CharacterUpdateStatus.pending,
+    )
+
+    character: Mapped[Character] = relationship(back_populates="update_suggestions")
+    scene: Mapped[Scene | None] = relationship()
+
+    @property
+    def beat_ids(self) -> list[int]:
+        """Parsed list of referenced beat IDs (empty if none)."""
+        if self.referenced_beat_ids is None:
+            return []
+        return json.loads(self.referenced_beat_ids)
 
 
 class Session0Prompt(TimestampMixin, Base):

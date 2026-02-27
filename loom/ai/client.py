@@ -24,6 +24,7 @@ from loom.ai.context import (
 from loom.ai.provider import UsageInfo, get_provider
 from loom.ai.schemas import (
     BeatClassification,
+    CharacterUpdateResponse,
     ConsistencyCheckResponse,
     OracleResponse,
     ProseExpansion,
@@ -32,7 +33,7 @@ from loom.ai.schemas import (
     WorldDocumentResponse,
 )
 from loom.config import settings
-from loom.models import AIUsageLog, Game, Scene
+from loom.models import AIUsageLog, Character, Game, Scene
 
 
 async def _log_usage(
@@ -521,3 +522,111 @@ async def check_beat_consistency(
         )
 
     return response.flags
+
+
+async def suggest_character_updates(
+    game: Game,
+    scene: Scene,
+    character: Character,
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> list[tuple[str, str, str, list[int]]]:
+    """Review completed scene beats and suggest additions to a character sheet.
+
+    Args:
+        game: Fully loaded game (world_document, safety_tools loaded).
+        scene: Just-completed scene (act, beats with events loaded).
+        character: The character whose sheet is being reviewed.
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        A list of (category, suggestion_text, reason, beat_ids) tuples.
+        Empty list if no updates suggested.
+    """
+    from loom.models import BeatStatus
+
+    context_comps = scene_context_components(game, scene)
+
+    # Build safety context
+    from loom.ai.context import format_safety_tools_context
+
+    safety_ctx = format_safety_tools_context(game.safety_tools) if game.safety_tools else ""
+
+    # Build labeled beat history so the AI can cite specific beat IDs
+    canon_beats = sorted(
+        [b for b in scene.beats if b.status == BeatStatus.canon],
+        key=lambda b: b.order,
+    )
+    beat_lines = []
+    for beat in canon_beats:
+        for event in beat.events:
+            if event.content:
+                beat_lines.append(f"[Beat #{beat.id}] {event.content}")
+
+    # Build character sheet context
+    char_parts = [f"Character Name: {character.name}"]
+    if character.description:
+        char_parts.append(f"Description:\n{character.description}")
+    if character.notes:
+        char_parts.append(f"Notes:\n{character.notes}")
+    char_sheet = "\n\n".join(char_parts)
+
+    system = (
+        "You are a character development assistant for a collaborative tabletop RPG. "
+        "Review the completed scene beats and suggest concrete additions to the character "
+        "sheet that are directly supported by what happened in the scene. "
+        "Only suggest changes grounded in specific events from the beats. "
+        "Do not invent events that did not occur. "
+        "Reference beats by their ID (e.g., 'Beat #42') in your reason and beat_ids fields. "
+        "Respect all safety tool content boundaries."
+    )
+
+    prompt_parts: list[str] = []
+
+    if game.world_document and game.world_document.content:
+        prompt_parts.append(f"WORLD DOCUMENT:\n{game.world_document.content}")
+
+    prompt_parts.append(
+        f"SCENE GUIDING QUESTION: {scene.guiding_question}"
+        + (f"\nLocation: {scene.location}" if scene.location else "")
+    )
+
+    if beat_lines:
+        prompt_parts.append("SCENE BEATS (all canon, labeled with IDs):\n" + "\n".join(beat_lines))
+    else:
+        prompt_parts.append("SCENE BEATS: (no canon beats recorded)")
+
+    if safety_ctx:
+        prompt_parts.append(safety_ctx)
+
+    prompt_parts.append(
+        f"CHARACTER SHEET (current state):\n{char_sheet}\n\n"
+        "The scene above has just completed. Review the labeled beats for this character "
+        "and suggest any additions to their sheet: new relationships, traits revealed "
+        "through action, items acquired or lost, or goals that changed. "
+        "For each suggestion, include the beat IDs that support it and a brief reason "
+        "citing those beats by their ID number."
+    )
+
+    model = settings.ai_model_creative
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt="\n\n".join(prompt_parts),
+        model=model,
+        max_tokens=768,
+        response_model=CharacterUpdateResponse,
+    )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="suggest_character_updates",
+            model=model,
+            usage=usage,
+            context_components=context_comps + ["character_sheet"],
+            game_id=game_id,
+        )
+
+    return [(s.category, s.suggestion_text, s.reason, s.beat_ids) for s in response.suggestions]

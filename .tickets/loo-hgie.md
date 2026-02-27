@@ -1,6 +1,6 @@
 ---
 id: loo-hgie
-status: open
+status: closed
 deps: [loo-vaim]
 links: []
 created: 2026-02-26T05:20:28Z

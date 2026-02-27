@@ -77,6 +77,51 @@ class ConsistencyCheckResponse(BaseModel):
     )
 
 
+class CharacterUpdateSuggestionItem(BaseModel):
+    category: Literal["relationship", "trait", "item", "goal"] = Field(
+        description=(
+            "'relationship' for new or changed bonds with other characters or factions; "
+            "'trait' for personality qualities, skills, or flaws revealed through action; "
+            "'item' for objects acquired, lost, or altered; "
+            "'goal' for changed or newly established motivations."
+        ),
+    )
+    suggestion_text: str = Field(
+        description=(
+            "A concrete, specific update for the character sheet in 1-3 sentences. "
+            "Write as a factual addition the player can accept as-is. "
+            "Ground it in what actually happened in the scene beats provided."
+        ),
+    )
+    reason: str = Field(
+        description=(
+            "Brief rationale explaining which specific beat(s) support this suggestion. "
+            "Reference beats by their ID as shown in the prompt (e.g., 'Beat #42 shows ...'). "
+            "1-2 sentences."
+        ),
+    )
+    beat_ids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "IDs of the specific beats that support this suggestion. "
+            "Use the numeric IDs provided in the prompt (e.g., [42, 47]). "
+            "Leave empty only if the suggestion follows from the overall scene arc "
+            "rather than specific beats."
+        ),
+    )
+
+
+class CharacterUpdateResponse(BaseModel):
+    suggestions: list[CharacterUpdateSuggestionItem] = Field(
+        max_length=4,
+        description=(
+            "Targeted updates for this character based on recent scene beats. "
+            "Return an empty list if no meaningful changes occurred for this character. "
+            "Each suggestion must be grounded in specific events from the scene."
+        ),
+    )
+
+
 class TensionAdjustmentResponse(BaseModel):
     delta: Literal[-1, 0, 1] = Field(
         description=(

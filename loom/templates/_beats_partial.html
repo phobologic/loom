@@ -15,7 +15,7 @@
 {% if beats %}
 <ol style="list-style:none; padding:0; margin:0;">
   {% for beat in beats %}
-  <li style="margin-bottom:1.25rem; padding:0.75rem; border:1px solid {% if beat.status.value in ['proposed', 'challenged', 'revised'] %}#e8a020{% else %}#ddd{% endif %}; border-radius:4px; background:{% if beat.status.value == 'challenged' %}#fff8ee{% elif beat.status.value in ['proposed', 'revised'] %}#fffbf0{% else %}#fff{% endif %};">
+  <li id="beat-{{ beat.id }}" style="margin-bottom:1.25rem; padding:0.75rem; border:1px solid {% if beat.status.value in ['proposed', 'challenged', 'revised'] %}#e8a020{% else %}#ddd{% endif %}; border-radius:4px; background:{% if beat.status.value == 'challenged' %}#fff8ee{% elif beat.status.value in ['proposed', 'revised'] %}#fffbf0{% else %}#fff{% endif %};">
     <div style="font-size:0.85rem; color:#555; margin-bottom:0.4rem;">
       <strong>{{ beat.author.display_name if beat.author else "Unknown" }}</strong>
       &middot; {{ beat.significance.value | capitalize }}
