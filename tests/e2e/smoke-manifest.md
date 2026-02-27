@@ -261,3 +261,19 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 - If the AI is unavailable, the form submits normally (no error shown, no blocking).
 - Other players (Bob) are not shown the consistency warning — it is visible only to the author before submission.
 **Severity if broken:** P2
+
+---
+
+## 26. Fortune Roll — Oracle Follow-up Link (REQ-ORACLE-008)
+
+**Preconditions:** Active scene. A fortune roll beat has been submitted by Alice and has resolved (contest window expired). Alice is logged in.
+**Actions:**
+1. Navigate to the scene detail page.
+2. Locate the resolved fortune roll beat in the timeline.
+3. Click "Ask the oracle about this →" link below the result.
+**Pass criteria:**
+- An "Ask the oracle about this →" link is visible below the resolved result badge, visible only to Alice (the invoker).
+- Clicking the link navigates to the oracle form for that scene.
+- The oracle question textarea is pre-filled with the original fortune roll question.
+- Bob (non-invoker) viewing the same scene does not see the link.
+**Severity if broken:** P2

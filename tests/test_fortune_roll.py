@@ -594,3 +594,99 @@ async def test_reaffirm_only_invoker(client: AsyncClient, db):
         follow_redirects=False,
     )
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Oracle follow-up link on resolved fortune roll beats
+# ---------------------------------------------------------------------------
+
+
+class TestFortuneRollOracleLink:
+    """The invoker sees an "Ask the oracle" link after a fortune roll resolves."""
+
+    async def _setup_resolved_beat(
+        self, db, game_id: int, scene_id: int, result: str
+    ) -> tuple[int, int]:
+        """Insert a resolved fortune roll beat; return (beat_id, event_id)."""
+        beat = Beat(
+            scene_id=scene_id,
+            author_id=1,
+            significance=BeatSignificance.minor,
+            status=BeatStatus.canon,
+            order=1,
+        )
+        db.add(beat)
+        await db.flush()
+        event = Event(
+            beat_id=beat.id,
+            type=EventType.fortune_roll,
+            oracle_query="Will the bridge hold?",
+            fortune_roll_odds="fifty_fifty",
+            fortune_roll_tension=5,
+            fortune_roll_result=result,
+            fortune_roll_expires_at=None,
+            fortune_roll_contested=False,
+            order=1,
+        )
+        db.add(event)
+        await db.commit()
+        return beat.id, event.id
+
+    @pytest.mark.parametrize("result", ["exceptional_yes", "yes", "no", "exceptional_no"])
+    async def test_invoker_sees_oracle_link(self, client, db, result):
+        """Resolved beat: invoker always sees "Ask the oracle" link."""
+        game_id = await _create_active_game(client)
+        act_id, scene_id = await _create_active_scene(db, game_id)
+        await self._setup_resolved_beat(db, game_id, scene_id, result)
+
+        await _login(client, 1)
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            follow_redirects=False,
+        )
+        assert r.status_code == 200
+        assert "Ask the oracle" in r.text
+
+    async def test_noninvoker_no_oracle_link(self, client, db):
+        """Non-invoker does not see the "Ask the oracle" link."""
+        game_id = await _create_active_game(client)
+        act_id, scene_id = await _create_active_scene(db, game_id)
+        db.add(GameMember(game_id=game_id, user_id=2, role=MemberRole.player))
+        await db.commit()
+        await self._setup_resolved_beat(db, game_id, scene_id, "exceptional_yes")
+
+        await _login(client, 2)
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            follow_redirects=False,
+        )
+        assert r.status_code == 200
+        assert "Ask the oracle" not in r.text
+
+    async def test_oracle_form_prefills_question(self, client, db):
+        """GET oracle form with ?question= pre-fills the textarea."""
+        game_id = await _create_active_game(client)
+        act_id, scene_id = await _create_active_scene(db, game_id)
+
+        await _login(client, 1)
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/oracle"
+            "?question=Will+the+bridge+hold%3F",
+            follow_redirects=False,
+        )
+        assert r.status_code == 200
+        assert "Will the bridge hold?" in r.text
+
+    async def test_oracle_form_no_prefill_without_param(self, client, db):
+        """GET oracle form without ?question= renders an empty textarea."""
+        game_id = await _create_active_game(client)
+        act_id, scene_id = await _create_active_scene(db, game_id)
+
+        await _login(client, 1)
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/oracle",
+            follow_redirects=False,
+        )
+        assert r.status_code == 200
+        # textarea should be present but empty (no pre-filled content)
+        assert 'name="question"' in r.text

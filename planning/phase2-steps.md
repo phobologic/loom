@@ -124,9 +124,7 @@ After a scene completes, the AI reviews recent beats and suggests additions to c
 
 ### Step 38: Fortune Roll Oracle Follow-up
 
-When a Fortune Roll returns an Exceptional Yes or Exceptional No, Loom prompts: "That's an exceptional result - want the oracle to suggest what that means?" If the player accepts, the full interpretive oracle is invoked with the Fortune Roll question as context, the exceptional result as a constraint, and a word seed pair generated for inspiration. The player can decline and interpret the exceptional result themselves.
-
-Regular Yes/No results do not trigger the prompt, though the player can always invoke the oracle manually afterward.
+After any Fortune Roll resolves, the invoker sees an "Ask the oracle about this →" link below the result badge. Clicking it opens the standard oracle form with the Fortune Roll question pre-filled. Non-invokers do not see the link. No mandatory prompt, no auto-invocation — just a convenience shortcut.
 
 **Requirements:** REQ-ORACLE-008
 

@@ -481,12 +481,12 @@ Game (settings, world document, members, active word seed tables)
 - Word seeds (REQ-ORACLE-005) are not used for Fortune Rolls - they are a simple yes/no mechanism.
 
 ### REQ-ORACLE-008: Fortune Roll with Oracle Follow-up
-*Requirement:* When a Fortune Roll returns an Exceptional result, Loom shall offer to invoke the full interpretive oracle to explore what the exceptional outcome means.
+*Requirement:* After a Fortune Roll resolves, Loom shall provide the invoker with a convenient link to invoke the oracle using the original question as a starting point.
 *Acceptance Criteria:*
-- On an Exceptional Yes or Exceptional No, Loom prompts: "That's an exceptional result - want the oracle to suggest what that means?"
-- If the player accepts, the full interpretive oracle (REQ-ORACLE-001) is invoked with the Fortune Roll question as context, the exceptional result as a constraint, and a word seed pair generated for additional inspiration.
-- The player can decline and interpret the exceptional result themselves instead.
-- Regular Yes/No results do not trigger this prompt, though a player can always manually invoke the full oracle afterward.
+- After a Fortune Roll resolves (any result), the invoker sees an "Ask the oracle about this →" link below the result badge.
+- Clicking the link opens the standard oracle form for that scene with the Fortune Roll question pre-filled in the question textarea.
+- Non-invokers do not see the link; they can still invoke the oracle independently if they wish.
+- The player can ignore the link and interpret the result themselves without any follow-up required.
 
 ### REQ-TENSION-001: Tension Tracking
 *Requirement:* Loom shall track a Tension per scene that represents the current level of narrative tension and unpredictability.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import random as _random
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -85,6 +85,7 @@ async def oracle_form(
     act_id: int,
     scene_id: int,
     request: Request,
+    question: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
@@ -117,6 +118,7 @@ async def oracle_form(
             "scene": scene,
             "action": action,
             "descriptor": descriptor,
+            "prefill_question": question or "",
         },
     )
 

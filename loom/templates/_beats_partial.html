@@ -325,6 +325,11 @@
         <span style="font-size:0.78rem; color:#555; margin-left:0.4rem;">[major beat]</span>
         {% endif %}
       </div>
+      {% if current_user_id is defined and beat.author_id == current_user_id %}
+      <p style="margin:0.35rem 0 0; font-size:0.82rem;">
+        <a href="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/oracle?question={{ event.oracle_query | urlencode }}">Ask the oracle about this &rarr;</a>
+      </p>
+      {% endif %}
       {% else %}
       {# Pending: show contest state or countdown #}
       {% set is_fr_invoker = (current_user_id is defined and beat.author_id == current_user_id) %}
