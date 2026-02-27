@@ -289,7 +289,8 @@ class TestEditCharacter:
         assert chars[0].description == "New desc"
         assert chars[0].notes == "New notes"
 
-    async def test_organizer_can_edit_any(self, client: AsyncClient) -> None:
+    async def test_organizer_cannot_edit_others(self, client: AsyncClient) -> None:
+        # Organizer has no narrative privilege — they cannot edit another player's character
         game_id, char_id = await self._setup_with_char(client)
         await _add_member(game_id, 2)
         await _login(client, 2)
@@ -298,7 +299,7 @@ class TestEditCharacter:
             data={"name": "Bob Char", "description": "", "notes": ""},
             follow_redirects=False,
         )
-        # Alice (organizer) edits Bob's character
+        # Alice (organizer) attempts to edit Bob's character
         await _login(client, 1)
         bob_chars = [c for c in await _get_characters(game_id) if c.name == "Bob Char"]
         bob_char_id = bob_chars[0].id
@@ -307,10 +308,7 @@ class TestEditCharacter:
             data={"name": "Bob Char Updated", "description": "", "notes": ""},
             follow_redirects=False,
         )
-        assert response.status_code == 303
-        chars = await _get_characters(game_id)
-        names = [c.name for c in chars]
-        assert "Bob Char Updated" in names
+        assert response.status_code == 403
 
     async def test_player_cannot_edit_others(self, client: AsyncClient) -> None:
         game_id, char_id = await self._setup_with_char(client)

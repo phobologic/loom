@@ -1725,8 +1725,10 @@ class TestChallengeResolution:
 
         beats = await _get_beats(scene_id)
         assert beats[0].status == BeatStatus.proposed
-        assert beats[0].challenge_reason is None
-        assert beats[0].challenged_by_id is None
+        assert beats[0].challenge_outcome == "accepted_revision"
+        # challenge_reason and challenged_by_id are preserved for history display
+        assert beats[0].challenge_reason is not None
+        assert beats[0].challenged_by_id is not None
 
     async def test_accept_replaces_narrative_events(self, client: AsyncClient) -> None:
         game_id = await _create_active_game(client, extra_members=[2])
@@ -1868,8 +1870,10 @@ class TestChallengeResolution:
 
         beats = await _get_beats(scene_id)
         assert beats[0].status == BeatStatus.canon
-        assert beats[0].challenge_reason is None
-        assert beats[0].challenged_by_id is None
+        assert beats[0].challenge_outcome == "dismissed"
+        # challenge_reason and challenged_by_id are preserved for history display
+        assert beats[0].challenge_reason is not None
+        assert beats[0].challenged_by_id is not None
 
     async def test_non_author_cannot_dismiss(self, client: AsyncClient) -> None:
         game_id = await _create_active_game(client, extra_members=[2])
