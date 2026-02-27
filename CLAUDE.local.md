@@ -125,6 +125,27 @@ All AI functions must be mocked in `conftest.mock_ai`. Current stubs: `oracle_in
 `session0_synthesis`, `generate_world_document`, `check_beat_consistency`, `expand_beat_prose`.
 If a new AI function is added to `loom/ai/client.py` and used in a route, add it there.
 
+## Error Handling
+
+**Blanket exception handling** — `except Exception` blocks must always call `logger.exception(...)` before any `return`/`pass`/`continue`. `logger.exception()` logs at ERROR level and includes the full traceback automatically — no `as e` or manual formatting needed.
+
+The only permitted silent carve-out is ORM attribute inspection guards (e.g. `sa_inspect`, lazy relationship access) where the failure mode is expected and the fallback is self-documenting. Annotate those with `# noqa: BLE001` and a brief inline comment explaining the intent.
+
+```python
+# WRONG — exception silently swallowed
+except Exception:
+    return
+
+# RIGHT — always log before returning
+except Exception:
+    logger.exception("Failed to do X for scene %d", scene.id)
+    return
+
+# OK — ORM guard, annotated
+except Exception:  # noqa: BLE001 — relationship not loaded, fall through
+    pass
+```
+
 ## Alembic Migrations
 
 **Always verify the current head before writing a new migration.** Run `uv run alembic heads`

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException
@@ -59,6 +60,7 @@ from loom.voting import (
     resolve_tension_vote,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -190,7 +192,7 @@ async def _create_tension_adjustment_proposal(
             game_id=game.id,
         )
     except Exception:
-        # AI failure must not abort scene completion
+        logger.exception("Failed to evaluate tension adjustment for scene %d", scene.id)
         return
 
     if total_players == 1:
@@ -257,7 +259,10 @@ async def _suggest_character_updates_for_scene(
                 game_id=game.id,
             )
         except Exception:
-            return  # AI failure must not abort scene completion
+            logger.exception(
+                "Failed to generate character update suggestions for scene %d", scene.id
+            )
+            return
 
         if not suggestions:
             return
