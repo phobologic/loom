@@ -346,3 +346,23 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 - After submission, the NPC appears on the `/games/{id}/npcs` page with the selected name and want.
 - If AI is unavailable, the suggestions area shows a graceful "No suggestions available" message and does not block NPC creation.
 **Severity if broken:** P2
+
+
+---
+
+## 31. World Entry CRUD (REQ-WORLD-001)
+
+**Preconditions:** Active game with Alice as organizer and Bob as a player member.
+**Actions:**
+1. Alice navigates to the game dashboard and clicks "World Entries".
+2. Alice fills in the creation form: Type → "Location", Name → "The Old Mill", Description → "A crumbling mill on the river.".
+3. Alice clicks "Add Entry".
+4. Bob (still logged in as Bob) navigates to `/games/{id}/world-entries`.
+5. Bob clicks "Edit" on "The Old Mill" and adds more description, then saves.
+**Pass criteria:**
+- The "World Entries" nav link is visible on the game dashboard for active/paused games and absent during setup.
+- After Alice creates the entry, she is redirected to the world entries list and "The Old Mill" appears with type "Location".
+- Bob can see the entry without any ownership restriction.
+- Bob can successfully edit the entry and his changes are saved.
+- All other game members receive a "world entry created" notification when Alice creates the entry.
+**Severity if broken:** P2

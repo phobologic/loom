@@ -31,6 +31,7 @@ from loom.routers import (
     session0,
     word_seeds,
     world_document,
+    world_entries,
 )
 
 _DEV_USERS = ["Alice", "Bob", "Charlie"]
@@ -75,6 +76,7 @@ app.include_router(word_seeds.router)
 app.include_router(world_document.router)
 app.include_router(characters.router)
 app.include_router(npcs.router)
+app.include_router(world_entries.router)
 app.include_router(scenes.router)
 app.include_router(oracles.router)
 app.include_router(notifications.router)

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}World Entries — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>World Entries — {{ game.name }}</h1>
+<p><strong>Status:</strong> {{ game.status.value | capitalize }}</p>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="/games/{{ game.id }}">Dashboard</a> |
+    <a href="/games/{{ game.id }}/characters">Characters</a> |
+    <a href="/games/{{ game.id }}/npcs">NPCs</a> |
+    <a href="/games/{{ game.id }}/world-entries">World Entries</a> |
+    <a href="/games/{{ game.id }}/safety-tools">Safety Tools</a> |
+    <a href="/games/{{ game.id }}/world-document">World Doc</a> |
+    <a href="/games/{{ game.id }}/settings">Settings</a>
+</nav>
+
+{% if editing %}
+<section style="margin-top:1.5rem; padding:0.75rem; border:1px solid #999;">
+  <h2>Edit Entry: {{ editing.name }}</h2>
+  <form method="post" action="/games/{{ game.id }}/world-entries/{{ editing.id }}/edit">
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-type"><strong>Type</strong> (required)</label><br>
+      <select id="edit-type" name="entry_type" required style="margin-top:0.2rem;">
+        {% for t in entry_types %}
+        <option value="{{ t.value }}" {% if editing.entry_type == t %}selected{% endif %}>{{ t.value | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-name"><strong>Name</strong> (required)</label><br>
+      <input id="edit-name" type="text" name="name" value="{{ editing.name }}" maxlength="150" required style="width:100%; max-width:400px;">
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="edit-description"><strong>Description</strong></label><br>
+      <textarea id="edit-description" name="description" rows="4" style="width:100%; max-width:600px;">{{ editing.description or "" }}</textarea>
+    </div>
+    <button type="submit">Save Changes</button>
+    <a href="/games/{{ game.id }}/world-entries" style="margin-left:0.75rem;">Cancel</a>
+  </form>
+</section>
+{% endif %}
+
+<section style="margin-top:1.5rem;">
+  <h2>Entries ({{ entries | length }})</h2>
+  {% if entries %}
+  <ul style="list-style:none; padding:0;">
+    {% for entry in entries %}
+    <li style="margin-bottom:1rem; padding:0.75rem; border:1px solid #ddd;">
+      <strong>{{ entry.name }}</strong>
+      <span style="font-size:0.82rem; color:#666; margin-left:0.5rem;">[{{ entry.entry_type.value | capitalize }}]</span>
+      {% if entry.description %}
+        <p style="margin:0.4rem 0 0;">{{ entry.description }}</p>
+      {% endif %}
+      {% if game.status.value != "archived" %}
+      <a href="/games/{{ game.id }}/world-entries/{{ entry.id }}/edit" style="font-size:0.9em;">Edit</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No world entries yet.</p>
+  {% endif %}
+</section>
+
+{% if not editing and game.status.value in ("active", "paused") %}
+<section style="margin-top:1.5rem; padding:0.75rem; border:1px solid #ccc;">
+  <h2>Add Entry</h2>
+  {% if game.status.value == "paused" %}
+  <p style="color:#888;"><em>The game is paused. Entry creation will resume when the game is active.</em></p>
+  {% else %}
+  <form method="post" action="/games/{{ game.id }}/world-entries">
+    <div style="margin-bottom:0.5rem;">
+      <label for="entry_type"><strong>Type</strong> (required)</label><br>
+      <select id="entry_type" name="entry_type" required style="margin-top:0.2rem;">
+        {% for t in entry_types %}
+        <option value="{{ t.value }}">{{ t.value | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="name"><strong>Name</strong> (required)</label><br>
+      <input id="name" type="text" name="name" maxlength="150" required style="width:100%; max-width:400px;">
+    </div>
+    <div style="margin-bottom:0.5rem;">
+      <label for="description"><strong>Description</strong></label><br>
+      <textarea id="description" name="description" rows="4" style="width:100%; max-width:600px;"></textarea>
+    </div>
+    <button type="submit">Add Entry</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<p style="margin-top:1rem;"><a href="/games/{{ game.id }}">&larr; Dashboard</a></p>
+{% endblock %}

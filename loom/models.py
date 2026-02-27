@@ -188,6 +188,17 @@ class NotificationType(str, enum.Enum):
     spotlight = "spotlight"
     character_update_suggested = "character_update_suggested"
     npc_created = "npc_created"
+    world_entry_created = "world_entry_created"
+
+
+class WorldEntryType(str, enum.Enum):
+    """Type of world entry."""
+
+    location = "location"
+    faction = "faction"
+    item = "item"
+    concept = "concept"
+    other = "other"
 
 
 class CharacterUpdateCategory(str, enum.Enum):
@@ -362,6 +373,11 @@ class Game(TimestampMixin, Base):
         back_populates="game",
         cascade="all, delete-orphan",
         order_by="NPC.name",
+    )
+    world_entries: Mapped[list[WorldEntry]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
+        order_by="WorldEntry.entry_type, WorldEntry.name",
     )
 
 
@@ -625,6 +641,22 @@ class NPC(TimestampMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="npcs")
+
+
+class WorldEntry(TimestampMixin, Base):
+    """A shared wiki-like world entry (location, faction, item, concept, etc.)."""
+
+    __tablename__ = "world_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    entry_type: Mapped[WorldEntryType] = mapped_column(
+        Enum(WorldEntryType, native_enum=False), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    game: Mapped[Game] = relationship(back_populates="world_entries")
 
 
 class CharacterUpdateSuggestion(TimestampMixin, Base):
