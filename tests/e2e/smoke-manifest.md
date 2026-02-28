@@ -60,7 +60,28 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 7. Session 0 — contribute + synthesize
+## 7. Session 0 — narrative voice
+
+**Preconditions:** 2-player game (Alice + Bob) in "Setup" status. Session 0 wizard seeded. The first 5 content prompts have been completed or skipped so the narrative voice step is active.
+**Actions:**
+1. Alice navigates to the narrative voice prompt.
+2. Alice (organizer) clicks "Suggest voices". Three AI-generated voice options appear.
+3. Bob clicks "Use this voice" on one of the options.
+4. The page reloads showing the selected voice in the "Current narrative voice" block.
+5. Alice enters a custom voice in the text area and clicks "Set custom voice".
+6. The page reloads showing Alice's custom voice.
+7. Alice clicks "Mark narrative voice complete".
+**Pass criteria:**
+- Voice suggestions appear as distinct prose-style descriptions (no raw JSON).
+- Selecting a suggestion sets `game.narrative_voice` and shows it on the page.
+- Writing and submitting a custom voice replaces any previously set voice.
+- Marking complete advances the wizard to the next step.
+- Non-organizer (Bob) can select a voice but cannot generate suggestions or mark complete.
+**Severity if broken:** P1
+
+---
+
+## 7b. Session 0 — contribute + synthesize
 
 **Preconditions:** 2-player game (Alice + Bob) in "Setup" status.
 **Actions:** Alice and Bob each submit a response to prompt 1. Alice clicks "Synthesize contributions".

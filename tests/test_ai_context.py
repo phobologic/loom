@@ -58,9 +58,11 @@ def _make_scene(characters_present=None, beats=None):
     return scene
 
 
-def _make_game(safety_tools=None):
+def _make_game(safety_tools=None, narrative_voice=None):
     """Build a minimal game mock for assemble_scene_context."""
-    return SimpleNamespace(world_document=None, safety_tools=safety_tools or [])
+    return SimpleNamespace(
+        world_document=None, safety_tools=safety_tools or [], narrative_voice=narrative_voice
+    )
 
 
 class TestAssembleSceneContextVoiceNotes:

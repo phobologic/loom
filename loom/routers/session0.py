@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import logging
+
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -9,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
-from loom.ai.client import session0_synthesis
+from loom.ai.client import session0_synthesis, suggest_narrative_voices
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
@@ -31,6 +34,8 @@ from loom.rendering import templates
 from loom.routers.world_document import _load_game_for_voting, create_world_doc_and_proposal
 from loom.word_seeds import ensure_game_seeds
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 _SAFETY_TOOLS_QUESTION = (
@@ -39,6 +44,9 @@ _SAFETY_TOOLS_QUESTION = (
 _WORD_SEEDS_QUESTION = (
     "Select which word-seed tables your game will use for the Oracle, and add any custom words."
 )
+_NARRATIVE_VOICE_QUESTION = (
+    "Choose your narrative voice — the prose style the AI will use for all generated story text."
+)
 
 _DEFAULT_PROMPTS = [
     "What genre and aesthetic define this world?",
@@ -46,6 +54,7 @@ _DEFAULT_PROMPTS = [
     "Describe the setting: time period, location, and world details.",
     "What is the central tension or mystery that drives the story?",
     "What themes are most important to explore in this game?",
+    _NARRATIVE_VOICE_QUESTION,
     _WORD_SEEDS_QUESTION,
     _SAFETY_TOOLS_QUESTION,
 ]
@@ -98,7 +107,7 @@ async def _load_game_with_session0(game_id: int, db: AsyncSession) -> Game | Non
 
 
 async def _seed_defaults(game: Game, db: AsyncSession) -> None:
-    """Create the six default prompts for a game if none exist."""
+    """Create the default prompts for a game if none exist."""
     for i, question in enumerate(_DEFAULT_PROMPTS):
         status = PromptStatus.active if i == 0 else PromptStatus.pending
         db.add(
@@ -109,6 +118,7 @@ async def _seed_defaults(game: Game, db: AsyncSession) -> None:
                 is_default=True,
                 is_safety_tools=(question is _SAFETY_TOOLS_QUESTION),
                 is_word_seeds=(question is _WORD_SEEDS_QUESTION),
+                is_narrative_voice=(question is _NARRATIVE_VOICE_QUESTION),
                 status=status,
             )
         )
@@ -215,6 +225,16 @@ async def session0_prompt(
         )
         word_seed_tables = list(tables_result.scalars().all())
 
+    # Parse voice suggestions from synthesis JSON when viewing the narrative voice step
+    narrative_voice_suggestions: list[str] = []
+    if prompt.is_narrative_voice and prompt.synthesis:
+        try:
+            narrative_voice_suggestions = json.loads(prompt.synthesis)
+        except (json.JSONDecodeError, TypeError):
+            logger.exception(
+                "Failed to parse narrative voice suggestions JSON for prompt %d", prompt.id
+            )
+
     return templates.TemplateResponse(
         request,
         "session0_wizard.html",
@@ -229,6 +249,7 @@ async def session0_prompt(
             "all_done": _all_done(list(game.session0_prompts)),
             "safety_tools": safety_tools,
             "word_seed_tables": word_seed_tables,
+            "narrative_voice_suggestions": narrative_voice_suggestions,
         },
     )
 
@@ -469,6 +490,128 @@ async def mark_word_seeds_done(
 
     if not prompt.is_word_seeds:
         raise HTTPException(status_code=400, detail="This route is only for the word seeds step")
+
+    prompt.status = PromptStatus.complete
+    next_prompt = _advance_wizard(list(game.session0_prompts), after_order=prompt.order)
+    await db.commit()
+
+    if next_prompt:
+        return RedirectResponse(url=f"/games/{game_id}/session0/{next_prompt.id}", status_code=303)
+    return RedirectResponse(url=f"/games/{game_id}/session0/{prompt_id}", status_code=303)
+
+
+@router.post(
+    "/games/{game_id}/session0/{prompt_id}/suggest-voices", response_class=RedirectResponse
+)
+async def suggest_voices(
+    game_id: int,
+    prompt_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Generate AI narrative voice suggestions and store them (organizer only)."""
+    game = await _load_game_with_session0(game_id, db)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(
+            status_code=403, detail="Only the organizer can generate voice suggestions"
+        )
+
+    prompt = next((p for p in game.session0_prompts if p.id == prompt_id), None)
+    if prompt is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    if not prompt.is_narrative_voice:
+        raise HTTPException(
+            status_code=400, detail="This route is only for the narrative voice step"
+        )
+
+    # Collect genre/tone synthesis from completed prompts for context
+    genre_tone_parts: list[str] = []
+    for p in sorted(game.session0_prompts, key=lambda p: p.order):
+        if p.synthesis_accepted and p.synthesis and not p.is_narrative_voice:
+            genre_tone_parts.append(f"Q: {p.question}\nA: {p.synthesis}")
+    genre_tone_context = "\n\n".join(genre_tone_parts)
+
+    voices = await suggest_narrative_voices(
+        game_name=game.name,
+        pitch=game.pitch or "",
+        genre_tone_context=genre_tone_context,
+        db=db,
+        game_id=game_id,
+    )
+    prompt.synthesis = json.dumps(voices)
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}/session0/{prompt_id}", status_code=303)
+
+
+@router.post("/games/{game_id}/session0/{prompt_id}/select-voice", response_class=RedirectResponse)
+async def select_voice(
+    game_id: int,
+    prompt_id: int,
+    request: Request,
+    voice: str = Form(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Set the game's narrative voice from a selection or custom input (any member)."""
+    game = await _load_game_with_session0(game_id, db)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    prompt = next((p for p in game.session0_prompts if p.id == prompt_id), None)
+    if prompt is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    if not prompt.is_narrative_voice:
+        raise HTTPException(
+            status_code=400, detail="This route is only for the narrative voice step"
+        )
+
+    if prompt.status != PromptStatus.active:
+        raise HTTPException(status_code=403, detail="This prompt is not currently active")
+
+    game.narrative_voice = voice.strip()
+    await db.commit()
+    return RedirectResponse(url=f"/games/{game_id}/session0/{prompt_id}", status_code=303)
+
+
+@router.post(
+    "/games/{game_id}/session0/{prompt_id}/mark-done-narrative-voice",
+    response_class=RedirectResponse,
+)
+async def mark_narrative_voice_done(
+    game_id: int,
+    prompt_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Mark the narrative voice prompt complete and advance the wizard (organizer only)."""
+    game = await _load_game_with_session0(game_id, db)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    current_member = _find_membership(game, current_user.id)
+    if current_member is None or current_member.role != MemberRole.organizer:
+        raise HTTPException(status_code=403, detail="Only the organizer can advance the wizard")
+
+    prompt = next((p for p in game.session0_prompts if p.id == prompt_id), None)
+    if prompt is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    if not prompt.is_narrative_voice:
+        raise HTTPException(
+            status_code=400, detail="This route is only for the narrative voice step"
+        )
 
     prompt.status = PromptStatus.complete
     next_prompt = _advance_wizard(list(game.session0_prompts), after_order=prompt.order)

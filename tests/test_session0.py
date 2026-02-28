@@ -84,13 +84,15 @@ class TestSession0WizardInit:
         game_id = await _create_game(client)
         await client.get(f"/games/{game_id}/session0", follow_redirects=False)
         prompts = await _get_prompts(db, game_id)
-        assert len(prompts) == 7
+        assert len(prompts) == 8
         assert prompts[0].status == PromptStatus.active
         assert all(p.status == PromptStatus.pending for p in prompts[1:])
-        assert prompts[5].is_word_seeds is True
-        assert prompts[6].is_safety_tools is True
-        assert all(not p.is_safety_tools for p in prompts[:6])
-        assert all(not p.is_word_seeds for p in prompts[:5])
+        assert prompts[5].is_narrative_voice is True
+        assert prompts[6].is_word_seeds is True
+        assert prompts[7].is_safety_tools is True
+        assert all(not p.is_safety_tools for p in prompts[:7])
+        assert all(not p.is_word_seeds for p in prompts[:6])
+        assert all(not p.is_narrative_voice for p in prompts[:5])
 
     async def test_wizard_requires_membership(self, client: AsyncClient) -> None:
         await _login(client, 1)
@@ -311,7 +313,7 @@ class TestSession0OrganizerControls:
         )
         assert response.status_code == 303
         prompts = await _get_prompts(db, game_id)
-        assert len(prompts) == 8
+        assert len(prompts) == 9
         custom = prompts[-1]
         assert custom.is_default is False
         assert custom.question == "What secret societies exist?"
@@ -400,4 +402,119 @@ class TestSession0Completion:
         # Seed but don't complete all
         await client.get(f"/games/{game_id}/session0", follow_redirects=False)
         response = await client.post(f"/games/{game_id}/session0/complete", follow_redirects=False)
+        assert response.status_code == 403
+
+
+class TestNarrativeVoice:
+    """Tests for the narrative voice step in Session 0."""
+
+    async def _setup(self, client: AsyncClient, db: AsyncSession) -> tuple[int, int]:
+        """Create a game as Alice, seed prompts; return (game_id, voice_prompt_id)."""
+        await _login(client, 1)
+        game_id = await _create_game(client)
+        await client.get(f"/games/{game_id}/session0", follow_redirects=False)
+        prompts = await _get_prompts(db, game_id)
+        voice_prompt = next(p for p in prompts if p.is_narrative_voice)
+        return game_id, voice_prompt.id
+
+    async def _activate_voice_prompt(
+        self, client: AsyncClient, db: AsyncSession, game_id: int
+    ) -> int:
+        """Skip all prompts before the narrative voice step so it becomes active."""
+        while True:
+            prompts = await _get_prompts(db, game_id)
+            active = next((p for p in prompts if p.status == PromptStatus.active), None)
+            if active is None or active.is_narrative_voice:
+                break
+            await client.post(f"/games/{game_id}/session0/{active.id}/skip", follow_redirects=False)
+        prompts = await _get_prompts(db, game_id)
+        voice_prompt = next(p for p in prompts if p.is_narrative_voice)
+        return voice_prompt.id
+
+    async def test_suggest_voices_stores_json(self, client: AsyncClient, db: AsyncSession) -> None:
+        import json
+
+        game_id, voice_prompt_id = await self._setup(client, db)
+        await self._activate_voice_prompt(client, db, game_id)
+        response = await client.post(
+            f"/games/{game_id}/session0/{voice_prompt_id}/suggest-voices",
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        prompt = await _get_prompt(db, voice_prompt_id)
+        assert prompt is not None
+        assert prompt.synthesis is not None
+        voices = json.loads(prompt.synthesis)
+        assert isinstance(voices, list)
+        assert len(voices) == 3
+
+    async def test_select_voice_sets_game_narrative_voice(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id, voice_prompt_id = await self._setup(client, db)
+        await self._activate_voice_prompt(client, db, game_id)
+        response = await client.post(
+            f"/games/{game_id}/session0/{voice_prompt_id}/select-voice",
+            data={"voice": "Gritty and direct: spare prose, harsh detail, no sentimentality."},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        db.expire_all()
+        result = await db.execute(select(Game).where(Game.id == game_id))
+        game = result.scalar_one()
+        assert (
+            game.narrative_voice
+            == "Gritty and direct: spare prose, harsh detail, no sentimentality."
+        )
+
+    async def test_select_voice_accessible_to_player(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id, voice_prompt_id = await self._setup(client, db)
+        await _add_member(db, game_id, user_id=2, role=MemberRole.player)
+        await self._activate_voice_prompt(client, db, game_id)
+        await _login(client, 2)
+        response = await client.post(
+            f"/games/{game_id}/session0/{voice_prompt_id}/select-voice",
+            data={"voice": "Lyrical and lush."},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+    async def test_mark_done_advances_wizard(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id, voice_prompt_id = await self._setup(client, db)
+        await self._activate_voice_prompt(client, db, game_id)
+        response = await client.post(
+            f"/games/{game_id}/session0/{voice_prompt_id}/mark-done-narrative-voice",
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        prompt = await _get_prompt(db, voice_prompt_id)
+        assert prompt is not None
+        assert prompt.status == PromptStatus.complete
+
+    async def test_suggest_voices_requires_organizer(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id, voice_prompt_id = await self._setup(client, db)
+        await _add_member(db, game_id, user_id=2, role=MemberRole.player)
+        await self._activate_voice_prompt(client, db, game_id)
+        await _login(client, 2)
+        response = await client.post(
+            f"/games/{game_id}/session0/{voice_prompt_id}/suggest-voices",
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+    async def test_mark_done_requires_organizer(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id, voice_prompt_id = await self._setup(client, db)
+        await _add_member(db, game_id, user_id=2, role=MemberRole.player)
+        await self._activate_voice_prompt(client, db, game_id)
+        await _login(client, 2)
+        response = await client.post(
+            f"/games/{game_id}/session0/{voice_prompt_id}/mark-done-narrative-voice",
+            follow_redirects=False,
+        )
         assert response.status_code == 403

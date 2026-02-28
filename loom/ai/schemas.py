@@ -229,6 +229,20 @@ class RelationshipSuggestionsResponse(BaseModel):
     )
 
 
+class NarrativeVoiceSuggestions(BaseModel):
+    voices: list[str] = Field(
+        min_length=3,
+        max_length=4,
+        description=(
+            "3-4 distinct narrative voice options suited to this game's genre and tone. "
+            "Each option is a 1-2 sentence description of a prose style — e.g. "
+            "'Terse and atmospheric: short sentences, sensory detail, little interiority.' "
+            "Make each option clearly distinct so the group can choose. "
+            "Do not number or label them — each entry is just the description."
+        ),
+    )
+
+
 class TensionAdjustmentResponse(BaseModel):
     delta: Literal[-1, 0, 1] = Field(
         description=(

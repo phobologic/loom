@@ -91,6 +91,15 @@ def mock_ai(monkeypatch):
     async def _expand_beat_prose(game, scene, beat_text, *, db=None, game_id=None):
         return None
 
+    async def _suggest_narrative_voices(
+        game_name, pitch, genre_tone_context, *, db=None, game_id=None
+    ):
+        return [
+            "Terse and atmospheric: short declarative sentences, sensory grounding, minimal interiority.",
+            "Lyrical and expansive: flowing prose, vivid metaphor, close third-person perspective.",
+            "Dry and wry: understated observations, ironic distance, matter-of-fact delivery.",
+        ]
+
     async def _suggest_character_updates(game, scene, character, *, db=None, game_id=None):
         return []
 
@@ -133,6 +142,8 @@ def mock_ai(monkeypatch):
     monkeypatch.setattr("loom.routers.scenes.check_beat_consistency", _check_beat_consistency)
     monkeypatch.setattr("loom.ai.client.expand_beat_prose", _expand_beat_prose)
     monkeypatch.setattr("loom.routers.scenes.expand_beat_prose", _expand_beat_prose)
+    monkeypatch.setattr("loom.ai.client.suggest_narrative_voices", _suggest_narrative_voices)
+    monkeypatch.setattr("loom.routers.session0.suggest_narrative_voices", _suggest_narrative_voices)
     monkeypatch.setattr("loom.ai.client.suggest_character_updates", _suggest_character_updates)
     monkeypatch.setattr(
         "loom.routers.world_document._ai_suggest_character_updates", _suggest_character_updates

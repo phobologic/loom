@@ -1,6 +1,6 @@
 ---
 id: loo-mr8d
-status: open
+status: closed
 deps: [loo-0saj]
 links: []
 created: 2026-02-27T05:35:02Z

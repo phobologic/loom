@@ -341,6 +341,9 @@ class Game(TimestampMixin, Base):
     )
     invite_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
 
+    # Narrative voice (set during Session 0)
+    narrative_voice: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Configurable settings
     silence_timer_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
     tie_breaking_method: Mapped[TieBreakingMethod] = mapped_column(
@@ -827,6 +830,7 @@ class Session0Prompt(TimestampMixin, Base):
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_safety_tools: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_word_seeds: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_narrative_voice: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[PromptStatus] = mapped_column(
         Enum(PromptStatus, native_enum=False), nullable=False, default=PromptStatus.pending
     )

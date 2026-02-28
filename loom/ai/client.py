@@ -26,6 +26,7 @@ from loom.ai.schemas import (
     BeatClassification,
     CharacterUpdateResponse,
     ConsistencyCheckResponse,
+    NarrativeVoiceSuggestions,
     NPCDetailSuggestions,
     OracleResponse,
     ProseExpansion,
@@ -197,6 +198,69 @@ async def session0_synthesis(
         )
 
     return response.text
+
+
+async def suggest_narrative_voices(
+    game_name: str,
+    pitch: str,
+    genre_tone_context: str,
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> list[str]:
+    """Generate narrative voice options suited to the game's genre and tone.
+
+    Args:
+        game_name: Name of the game.
+        pitch: Game pitch (may be empty).
+        genre_tone_context: Synthesized genre/tone text from completed Session 0 prompts.
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        A list of 3-4 voice option strings for the group to choose from.
+    """
+    system = (
+        "You are a creative writing consultant helping a tabletop RPG group choose a narrative "
+        "prose style for their collaborative game. Based on the game's genre and tone, suggest "
+        "3-4 distinct narrative voice options the group can choose from. Each option should be "
+        "a short, vivid description of a prose style — concrete enough that the AI can apply it "
+        "consistently. Make the options genuinely different from each other."
+    )
+
+    lines: list[str] = [f"Game: {game_name}"]
+    context_comps: list[str] = ["game_name"]
+    if pitch:
+        lines.append(f"Pitch: {pitch}")
+        context_comps.append("pitch")
+    if genre_tone_context:
+        lines.append(f"\nGame genre and tone established in Session 0:\n{genre_tone_context}")
+        context_comps.append("genre_tone_context")
+    lines.append(
+        "\nSuggest 3-4 narrative voice options for this game's AI-generated prose. "
+        "Each should be a 1-2 sentence style description a writer could follow consistently."
+    )
+
+    model = settings.ai_model_creative
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt="\n".join(lines),
+        model=model,
+        max_tokens=512,
+        response_model=NarrativeVoiceSuggestions,
+    )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="suggest_narrative_voices",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
+    return response.voices
 
 
 async def generate_world_document(
@@ -422,11 +486,16 @@ async def expand_beat_prose(
         "Do not contradict the story context. Respect all safety tool boundaries."
     )
 
+    voice_instruction = (
+        f"Apply this narrative voice: {game.narrative_voice}"
+        if game.narrative_voice
+        else "Match the narrative voice implied by the world document above."
+    )
     prompt = (
         f"{scene_ctx}\n\n"
         f"{tension_ctx}\n\n"
         f"PLAYER'S SUBMITTED BEAT:\n{beat_text}\n\n"
-        "Rewrite the beat as polished prose. Match the narrative voice of the game world above."
+        f"Rewrite the beat as polished prose. {voice_instruction}"
     )
 
     model = settings.ai_model_creative

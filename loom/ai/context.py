@@ -65,6 +65,9 @@ def assemble_scene_context(
     if game.world_document and game.world_document.content:
         parts.append(f"WORLD DOCUMENT:\n{game.world_document.content}")
 
+    if game.narrative_voice:
+        parts.append(f"NARRATIVE VOICE: {game.narrative_voice}")
+
     parts.append(f"CURRENT ACT GUIDING QUESTION: {act.guiding_question}")
 
     scene_header = f"CURRENT SCENE GUIDING QUESTION: {scene.guiding_question}"
@@ -148,6 +151,8 @@ def scene_context_components(game: Game, scene: Scene) -> list[str]:
     components: list[str] = ["act_guiding_question", "scene_guiding_question", "tension"]
     if game.world_document and game.world_document.content:
         components.insert(0, "world_document")
+    if game.narrative_voice:
+        components.append("narrative_voice")
     if scene.characters_present:
         components.append("characters_present")
     canon_beats = [b for b in scene.beats if b.status == BeatStatus.canon]
