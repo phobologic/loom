@@ -548,3 +548,88 @@ class TestActCompletion:
 
         r = await client.get(f"/games/{game_id}/acts/{act_id}/scenes", follow_redirects=False)
         assert b"Propose Act Completion" in r.content
+
+
+# ---------------------------------------------------------------------------
+# Act narrative compilation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestActNarrative:
+    async def test_narrative_generated_on_auto_approve(self, client: AsyncClient, db) -> None:
+        """Single-player act completion triggers act narrative generation."""
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act_direct(db, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/complete",
+            follow_redirects=False,
+        )
+
+        db.expire_all()
+        act = await _get_act(db, act_id)
+        assert act.narrative is not None
+        assert len(act.narrative) > 0
+
+    async def test_narrative_skipped_when_disabled(self, client: AsyncClient, db) -> None:
+        """auto_generate_narrative=False suppresses act narrative generation."""
+        game_id = await _create_active_game(client, db)
+
+        result = await db.execute(select(Game).where(Game.id == game_id))
+        game = result.scalar_one()
+        game.auto_generate_narrative = False
+        await db.commit()
+
+        act_id = await _create_active_act_direct(db, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/complete",
+            follow_redirects=False,
+        )
+
+        db.expire_all()
+        act = await _get_act(db, act_id)
+        assert act.narrative is None
+
+    async def test_narrative_generated_on_vote_approval(self, client: AsyncClient, db) -> None:
+        """Vote-approved act completion triggers act narrative generation."""
+        game_id = await _create_active_game(client, db, extra_members=[2])
+        await _login(client, 1)
+        act_id = await _create_active_act_direct(db, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/complete",
+            follow_redirects=False,
+        )
+        proposals = await _get_proposals(db, game_id)
+        proposal = next(p for p in proposals if p.proposal_type == ProposalType.act_complete)
+        proposal_id = proposal.id
+
+        await _login(client, 2)
+        await client.post(
+            f"/games/{game_id}/proposals/{proposal_id}/vote",
+            data={"choice": "yes"},
+            follow_redirects=False,
+        )
+
+        db.expire_all()
+        act = await _get_act(db, act_id)
+        assert act.narrative is not None
+        assert len(act.narrative) > 0
+
+    async def test_narrative_shown_on_scenes_page(self, client: AsyncClient, db) -> None:
+        """Completed act with narrative shows it on the scenes list page."""
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act_direct(db, game_id)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/complete",
+            follow_redirects=False,
+        )
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes",
+            follow_redirects=False,
+        )
+        assert b"Act Narrative" in r.content

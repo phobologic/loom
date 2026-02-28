@@ -191,6 +191,15 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
+## 18b. Act narrative on completion
+
+**Preconditions:** Active act with at least one complete scene. `auto_generate_narrative` is enabled (default). Alice is a member.
+**Actions:** Alice completes the act (single-player auto-approve or multi-player vote). Navigate to the scenes list page for that act (`/games/{id}/acts/{act_id}/scenes`).
+**Pass criteria:** An "Act Narrative" section appears on the scenes page containing AI-generated prose. The narrative is read-only (no edit controls). If `auto_generate_narrative` is disabled on the game, the section does not appear.
+**Severity if broken:** P1
+
+---
+
 ## 19. Scene narrative on completion
 
 **Preconditions:** Active scene with at least one canon beat. `auto_generate_narrative` is enabled (default). Alice is a member.

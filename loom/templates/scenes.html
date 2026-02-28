@@ -200,5 +200,12 @@
 </section>
 {% endif %}
 
+{% if act.status.value == "complete" and act.narrative %}
+<section style="margin-top:2rem; padding:1rem; background:#f0edf6; border-left:4px solid #6b4fa0;">
+  <h2 style="margin-top:0; font-size:1.1rem;">Act Narrative</h2>
+  <div style="white-space:pre-wrap; font-style:italic; line-height:1.7;">{{ act.narrative }}</div>
+</section>
+{% endif %}
+
 <p style="margin-top:1.5rem;"><a href="/games/{{ game.id }}/acts">&larr; Back to Acts</a></p>
 {% endblock %}

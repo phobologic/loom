@@ -55,6 +55,7 @@ from loom.models import (
 )
 from loom.notifications import create_notification
 from loom.rendering import templates
+from loom.routers.acts import _compile_act_narrative
 from loom.routers.relationships import _scan_beat_for_relationships
 from loom.routers.world_entries import _scan_beat_for_world_entries
 from loom.voting import (
@@ -581,6 +582,7 @@ async def cast_vote(
             for scene in proposal.act.scenes:
                 if scene.status == SceneStatus.active:
                     scene.status = SceneStatus.complete
+            await _compile_act_narrative(proposal.act, game, db)
 
     await db.commit()
 

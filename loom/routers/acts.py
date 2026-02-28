@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -9,17 +11,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
+from loom.ai.client import generate_act_narrative as _ai_generate_act_narrative
 from loom.database import get_db
 from loom.dependencies import get_current_user
 from loom.models import (
     Act,
     ActStatus,
+    Beat,
     Game,
     GameMember,
     GameStatus,
     NotificationType,
     ProposalStatus,
     ProposalType,
+    Scene,
     SceneStatus,
     User,
     Vote,
@@ -30,6 +35,8 @@ from loom.notifications import notify_game_members
 from loom.rendering import templates
 from loom.voting import activate_act, approval_threshold, is_approved
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -38,6 +45,39 @@ def _find_membership(game: Game, user_id: int) -> GameMember | None:
         if m.user_id == user_id:
             return m
     return None
+
+
+async def _compile_act_narrative(act: Act, game: Game, db: AsyncSession) -> None:
+    """Generate and store a prose narrative for a completed act.
+
+    Re-queries the act with all scenes and their beats loaded so context assembly
+    has the data it needs. Skipped when auto_generate_narrative is disabled.
+    AI failures are logged but do not roll back act completion. No separate commit.
+    """
+    if not game.auto_generate_narrative:
+        return
+
+    result = await db.execute(
+        select(Act)
+        .where(Act.id == act.id)
+        .options(
+            selectinload(Act.game).selectinload(Game.world_document),
+            selectinload(Act.game).selectinload(Game.safety_tools),
+            selectinload(Act.scenes).selectinload(Scene.beats).selectinload(Beat.events),
+        )
+    )
+    full_act = result.scalar_one_or_none()
+    if full_act is None:
+        return
+
+    full_game = full_act.game
+    try:
+        narrative = await _ai_generate_act_narrative(full_game, full_act, db=db, game_id=game.id)
+    except Exception:
+        logger.exception("Failed to generate act narrative for act %d", act.id)
+        return
+
+    full_act.narrative = narrative
 
 
 async def _load_game_for_acts(game_id: int, db: AsyncSession) -> Game | None:
@@ -249,6 +289,7 @@ async def propose_act_complete(
         for scene in act.scenes:
             if scene.status == SceneStatus.active:
                 scene.status = SceneStatus.complete
+        await _compile_act_narrative(act, game, db)
 
     link = f"/games/{game_id}/acts/{act_id}/scenes"
     label = act.guiding_question[:60]

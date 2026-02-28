@@ -475,6 +475,7 @@ class Act(TimestampMixin, Base):
         Enum(ActStatus, native_enum=False), nullable=False, default=ActStatus.proposed
     )
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    narrative: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="acts")
     scenes: Mapped[list[Scene]] = relationship(back_populates="act", cascade="all, delete-orphan")

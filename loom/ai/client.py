@@ -17,6 +17,7 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from loom.ai.context import (
+    assemble_act_narrative_context,
     assemble_scene_context,
     assemble_scene_narrative_context,
     format_tension_context,
@@ -24,6 +25,7 @@ from loom.ai.context import (
 )
 from loom.ai.provider import UsageInfo, get_provider
 from loom.ai.schemas import (
+    ActNarrativeResponse,
     BeatClassification,
     CharacterUpdateResponse,
     ConsistencyCheckResponse,
@@ -39,7 +41,7 @@ from loom.ai.schemas import (
     WorldEntrySuggestionsResponse,
 )
 from loom.config import settings
-from loom.models import NPC, AIUsageLog, Character, Game, Scene, WorldEntry
+from loom.models import NPC, Act, AIUsageLog, Character, Game, Scene, WorldEntry
 
 
 async def _log_usage(
@@ -1031,6 +1033,79 @@ async def generate_scene_narrative(
         await _log_usage(
             db,
             feature="generate_scene_narrative",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
+    return response.narrative
+
+
+async def generate_act_narrative(
+    game: Game,
+    act: Act,
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> str:
+    """Generate a compiled prose narrative for a completed act.
+
+    Weaves the act's scene narratives (or raw beats as fallback) into a single
+    coherent prose narrative framed by the act's guiding question and arc.
+
+    Args:
+        game: Fully loaded game (world_document, narrative_voice, safety_tools loaded).
+        act: Completed act (scenes with beats and events loaded).
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        A prose narrative string for the completed act.
+    """
+    act_ctx = assemble_act_narrative_context(game, act)
+
+    system = (
+        "You are a prose author for a collaborative tabletop RPG. "
+        "Your role is to write a complete act narrative that weaves together "
+        "the act's scenes into coherent literary prose — third person, "
+        "past tense, matching the game's narrative voice. "
+        "Use the act's guiding question as framing for the overall arc. "
+        "Do not introduce new events or characters not present in the source. "
+        "Respect all safety tool boundaries."
+    )
+
+    voice_instruction = (
+        f"Apply this narrative voice: {game.narrative_voice}"
+        if game.narrative_voice
+        else "Match the narrative voice implied by the world document above."
+    )
+    prompt = (
+        f"{act_ctx}\n\n"
+        f"Write a complete act narrative in past tense that frames the scenes above "
+        f"around the act's guiding question. {voice_instruction}"
+    )
+
+    model = settings.ai_model_creative
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt=prompt,
+        model=model,
+        max_tokens=2048,
+        response_model=ActNarrativeResponse,
+    )
+
+    if db is not None:
+        context_comps: list[str] = ["act_guiding_question", "scene_narratives"]
+        if game.world_document and game.world_document.content:
+            context_comps.insert(0, "world_document")
+        if game.narrative_voice:
+            context_comps.append("narrative_voice")
+        if game.safety_tools:
+            context_comps.append("safety_tools")
+        await _log_usage(
+            db,
+            feature="generate_act_narrative",
             model=model,
             usage=usage,
             context_components=context_comps,

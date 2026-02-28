@@ -73,6 +73,18 @@ class SceneNarrativeResponse(BaseModel):
     )
 
 
+class ActNarrativeResponse(BaseModel):
+    narrative: str = Field(
+        description=(
+            "A complete prose narrative of the act, written as literary collaborative-fiction "
+            "in third-person past tense. Weave the provided scene narratives into a coherent "
+            "act-length narrative that reflects the act's guiding question and arc. "
+            "Match the game's established narrative voice. "
+            "Do not introduce events not present in the source material."
+        ),
+    )
+
+
 class ConsistencyCheckResponse(BaseModel):
     flags: list[str] = Field(
         max_length=5,

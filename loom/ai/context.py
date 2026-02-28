@@ -7,7 +7,7 @@ for inclusion in AI system and user prompts.
 
 from __future__ import annotations
 
-from loom.models import BeatStatus, EventType, Game, Scene
+from loom.models import Act, BeatStatus, EventType, Game, Scene
 
 
 def format_safety_tools_context(tools: list) -> str:
@@ -238,6 +238,64 @@ def assemble_scene_narrative_context(game: Game, scene: Scene) -> str:
                     snippets.append(f"  - [Fortune Roll] {event.content}")
         if snippets:
             parts.append("SCENE EVENTS (chronological, OOC excluded):\n" + "\n".join(snippets))
+
+    if game.safety_tools:
+        safety_ctx = format_safety_tools_context(game.safety_tools)
+        if safety_ctx:
+            parts.append(safety_ctx)
+
+    return "\n\n".join(parts)
+
+
+def assemble_act_narrative_context(game: Game, act: Act) -> str:
+    """Build a context block for compiling a completed act's prose narrative.
+
+    Uses each scene's stored narrative as the primary source. Falls back to raw
+    canon beat events for scenes that have no narrative (e.g. AI was disabled or
+    failed when the scene completed). OOC events are excluded from the fallback.
+
+    Args:
+        game: Game instance (world_document, narrative_voice, and safety_tools loaded).
+        act: Completed act (scenes with beats and events loaded).
+
+    Returns:
+        A formatted multi-section context string.
+    """
+    parts: list[str] = []
+
+    if game.world_document and game.world_document.content:
+        parts.append(f"WORLD DOCUMENT:\n{game.world_document.content}")
+
+    if game.narrative_voice:
+        parts.append(f"NARRATIVE VOICE: {game.narrative_voice}")
+
+    parts.append(f"ACT GUIDING QUESTION: {act.guiding_question}")
+
+    scenes_sorted = sorted(act.scenes, key=lambda s: s.order)
+    for i, scene in enumerate(scenes_sorted, 1):
+        header = f"SCENE {i}: {scene.guiding_question}"
+        if scene.location:
+            header += f"\nLocation: {scene.location}"
+
+        if scene.narrative:
+            parts.append(f"{header}\n\n{scene.narrative}")
+        else:
+            # Fallback: raw events from canon beats, OOC excluded
+            canon_beats = sorted(
+                [b for b in scene.beats if b.status == BeatStatus.canon],
+                key=lambda b: b.order,
+            )
+            snippets: list[str] = []
+            for beat in canon_beats:
+                for event in sorted(beat.events, key=lambda e: e.order):
+                    if event.type not in _NARRATIVE_EVENT_TYPES:
+                        continue
+                    if event.content:
+                        snippets.append(f"  - {event.content}")
+            if snippets:
+                parts.append(f"{header}\n\n" + "\n".join(snippets))
+            else:
+                parts.append(header)
 
     if game.safety_tools:
         safety_ctx = format_safety_tools_context(game.safety_tools)
