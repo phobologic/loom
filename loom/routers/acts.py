@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, Depends, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -150,6 +151,9 @@ async def acts_view(
             "suggest_count": suggest_count,
             "total_players": total_players,
             "threshold": threshold,
+            "has_exportable_acts": any(
+                a.status == ActStatus.complete and a.narrative for a in game.acts
+            ),
         },
     )
 
@@ -313,3 +317,122 @@ async def propose_act_complete(
 
     await db.commit()
     return RedirectResponse(url=f"/games/{game_id}/acts/{act_id}/scenes", status_code=303)
+
+
+def _act_label(act: Act) -> str:
+    return act.title if act.title else f"Act {act.order}"
+
+
+@router.get("/games/{game_id}/acts/{act_id}/export", response_class=PlainTextResponse)
+async def export_act_narrative(
+    game_id: int,
+    act_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlainTextResponse:
+    """Download the act narrative (plus completed scene narratives) as a markdown file."""
+    game = await _load_game_for_acts(game_id, db)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    act = next((a for a in game.acts if a.id == act_id), None)
+    if act is None:
+        raise HTTPException(status_code=404, detail="Act not found")
+
+    if not act.narrative:
+        raise HTTPException(status_code=404, detail="No narrative available for this act")
+
+    label = _act_label(act)
+    lines: list[str] = [
+        f"# {label}",
+        "",
+        f"*Guiding question: {act.guiding_question}*",
+        "",
+        "## Act Narrative",
+        "",
+        act.narrative,
+    ]
+
+    completed_scenes = sorted(
+        (s for s in act.scenes if s.narrative),
+        key=lambda s: s.order,
+    )
+    for scene in completed_scenes:
+        lines += [
+            "",
+            f"## Scene {scene.order}: {scene.guiding_question}",
+            "",
+            scene.narrative,
+        ]
+
+    content = "\n".join(lines)
+    return PlainTextResponse(
+        content,
+        headers={"Content-Disposition": f'attachment; filename="act-{act_id}-narrative.md"'},
+    )
+
+
+def _game_slug(name: str) -> str:
+    slug = name.lower()
+    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"[^a-z0-9\-]", "", slug)
+    return slug[:50] or "game"
+
+
+@router.get("/games/{game_id}/export", response_class=PlainTextResponse)
+async def export_game_narrative(
+    game_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlainTextResponse:
+    """Download all completed act narratives (with their scenes) as a single markdown file."""
+    game = await _load_game_for_acts(game_id, db)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    exportable_acts = sorted(
+        (a for a in game.acts if a.status == ActStatus.complete and a.narrative),
+        key=lambda a: a.order,
+    )
+    if not exportable_acts:
+        raise HTTPException(status_code=404, detail="No completed narratives available for export")
+
+    lines: list[str] = [f"# {game.name}"]
+
+    for act in exportable_acts:
+        label = _act_label(act)
+        lines += [
+            "",
+            f"# {label}",
+            "",
+            f"*Guiding question: {act.guiding_question}*",
+            "",
+            "## Act Narrative",
+            "",
+            act.narrative,
+        ]
+
+        completed_scenes = sorted(
+            (s for s in act.scenes if s.narrative),
+            key=lambda s: s.order,
+        )
+        for scene in completed_scenes:
+            lines += [
+                "",
+                f"### Scene {scene.order}: {scene.guiding_question}",
+                "",
+                scene.narrative,
+            ]
+
+    content = "\n".join(lines)
+    slug = _game_slug(game.name)
+    return PlainTextResponse(
+        content,
+        headers={"Content-Disposition": f'attachment; filename="{slug}-narrative.md"'},
+    )

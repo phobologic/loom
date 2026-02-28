@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -1621,4 +1621,48 @@ async def dismiss_prose(
     await db.commit()
     return RedirectResponse(
         url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", status_code=303
+    )
+
+
+@router.get(
+    "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/export",
+    response_class=PlainTextResponse,
+)
+async def export_scene_narrative(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlainTextResponse:
+    """Download the scene narrative as a markdown file."""
+    scene = await _load_scene_for_view(scene_id, db)
+    if scene is None or scene.act_id != act_id or scene.act.game_id != game_id:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    act = scene.act
+    game = act.game
+
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    if not scene.narrative:
+        raise HTTPException(status_code=404, detail="No narrative available for this scene")
+
+    act_label = act.title if act.title else f"Act {act.order}"
+    lines: list[str] = [
+        f"# {act_label}",
+        "",
+        f"*Guiding question: {act.guiding_question}*",
+        "",
+        f"## Scene {scene.order}",
+        "",
+        f"*Guiding question: {scene.guiding_question}*",
+        "",
+        scene.narrative,
+    ]
+    content = "\n".join(lines)
+    return PlainTextResponse(
+        content,
+        headers={"Content-Disposition": f'attachment; filename="scene-{scene_id}-narrative.md"'},
     )

@@ -31,6 +31,11 @@
     </li>
     {% endfor %}
   </ol>
+  {% if has_exportable_acts %}
+  <p style="margin-top:0.75rem;">
+    <a href="/games/{{ game.id }}/export">&#x2193; Export all narratives (.md)</a>
+  </p>
+  {% endif %}
   {% else %}
   <p>No acts yet. Propose the first act to begin play.</p>
   {% endif %}

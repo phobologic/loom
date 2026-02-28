@@ -460,3 +460,22 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 - Clicking "Dismiss" removes the suggestion from view without creating an entry; no notification is sent.
 - Both Accept and Dismiss redirect back to `/games/{id}/world-entries`.
 **Severity if broken:** P2
+
+---
+
+## 35. Narrative export (REQ-PROSE-004)
+
+**Preconditions:** A game with at least one complete act that has a narrative and at least one complete scene within that act that has a narrative.
+**Actions:**
+1. Navigate to `/games/{id}/acts/{act_id}/scenes/{scene_id}`. The "Scene Narrative" section is visible. Click "↓ Download scene narrative (.md)".
+2. Verify the browser downloads a `.md` file. Confirm it contains the scene guiding question as a header and the narrative text.
+3. Navigate to `/games/{id}/acts/{act_id}/scenes`. The "Act Narrative" section is visible. Click "↓ Download act narrative (.md)".
+4. Verify the file contains the act guiding question, act narrative, and the scene narrative in order.
+5. Navigate to `/games/{id}/acts`. Click "↓ Export all narratives (.md)".
+6. Verify the file contains all completed acts and their scenes in order, with act/scene headers and guiding questions.
+**Pass criteria:**
+- All three download links appear only when the relevant narrative exists.
+- The "Export all narratives" link does not appear on the acts page when no completed act has a narrative.
+- Downloaded files open as valid markdown with `#`/`##`/`###` headers for game, act, and scene titles and guiding questions.
+- Navigating directly to an export URL as a non-member returns a 403.
+**Severity if broken:** P2

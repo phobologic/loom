@@ -633,3 +633,175 @@ class TestActNarrative:
             follow_redirects=False,
         )
         assert b"Act Narrative" in r.content
+
+
+class TestNarrativeExport:
+    """Tests for scene, act, and full-game narrative export endpoints."""
+
+    async def _setup_game_with_narratives(self, db, game_id: int) -> tuple[int, int]:
+        """Seed an act + scene with narrative text; return (act_id, scene_id)."""
+        act = Act(
+            game_id=game_id,
+            guiding_question="What drives the darkness?",
+            title="The First Act",
+            status=ActStatus.complete,
+            order=1,
+            narrative="The act unfolded in shadow.",
+        )
+        db.add(act)
+        await db.flush()
+
+        scene = Scene(
+            act_id=act.id,
+            guiding_question="Who lurks in the alley?",
+            tension=5,
+            status=SceneStatus.complete,
+            order=1,
+            narrative="The alley held its secrets.",
+        )
+        db.add(scene)
+        await db.commit()
+        return act.id, scene.id
+
+    # --- Scene export ---
+
+    async def test_scene_export_returns_markdown(self, client: AsyncClient, db) -> None:
+        """Scene export returns markdown with structural headers and narrative text."""
+        game_id = await _create_active_game(client, db)
+        act_id, scene_id = await self._setup_game_with_narratives(db, game_id)
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/export",
+            follow_redirects=False,
+        )
+        assert r.status_code == 200
+        assert "attachment" in r.headers["content-disposition"]
+        assert f"scene-{scene_id}-narrative.md" in r.headers["content-disposition"]
+        text = r.text
+        assert "The First Act" in text
+        assert "What drives the darkness?" in text
+        assert "Who lurks in the alley?" in text
+        assert "The alley held its secrets." in text
+
+    async def test_scene_export_no_narrative_returns_404(self, client: AsyncClient, db) -> None:
+        """Scene with no narrative returns 404."""
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act_direct(db, game_id)
+        scene_id = await _create_active_scene_for_act(db, act_id, game_id)
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/export",
+            follow_redirects=False,
+        )
+        assert r.status_code == 404
+
+    async def test_scene_export_non_member_returns_403(self, client: AsyncClient, db) -> None:
+        """Non-member cannot export a scene narrative."""
+        game_id = await _create_active_game(client, db)
+        act_id, scene_id = await self._setup_game_with_narratives(db, game_id)
+
+        await _login(client, 2)  # Bob — not a member of this game
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/export",
+            follow_redirects=False,
+        )
+        assert r.status_code == 403
+
+    # --- Act export ---
+
+    async def test_act_export_returns_markdown(self, client: AsyncClient, db) -> None:
+        """Act export returns act narrative and completed scene narratives."""
+        game_id = await _create_active_game(client, db)
+        act_id, scene_id = await self._setup_game_with_narratives(db, game_id)
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/export",
+            follow_redirects=False,
+        )
+        assert r.status_code == 200
+        assert "attachment" in r.headers["content-disposition"]
+        assert f"act-{act_id}-narrative.md" in r.headers["content-disposition"]
+        text = r.text
+        assert "The First Act" in text
+        assert "What drives the darkness?" in text
+        assert "The act unfolded in shadow." in text
+        assert "Who lurks in the alley?" in text
+        assert "The alley held its secrets." in text
+
+    async def test_act_export_no_narrative_returns_404(self, client: AsyncClient, db) -> None:
+        """Act with no narrative returns 404."""
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act_direct(db, game_id)
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/export",
+            follow_redirects=False,
+        )
+        assert r.status_code == 404
+
+    async def test_act_export_non_member_returns_403(self, client: AsyncClient, db) -> None:
+        """Non-member cannot export an act narrative."""
+        game_id = await _create_active_game(client, db)
+        act_id, scene_id = await self._setup_game_with_narratives(db, game_id)
+
+        await _login(client, 2)
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/export",
+            follow_redirects=False,
+        )
+        assert r.status_code == 403
+
+    # --- Game export ---
+
+    async def test_game_export_returns_full_markdown(self, client: AsyncClient, db) -> None:
+        """Game export includes all completed acts and their scene narratives."""
+        game_id = await _create_active_game(client, db)
+        await self._setup_game_with_narratives(db, game_id)
+
+        r = await client.get(f"/games/{game_id}/export", follow_redirects=False)
+        assert r.status_code == 200
+        assert "attachment" in r.headers["content-disposition"]
+        assert "narrative.md" in r.headers["content-disposition"]
+        text = r.text
+        assert "Test Game" in text
+        assert "The First Act" in text
+        assert "The act unfolded in shadow." in text
+        assert "Who lurks in the alley?" in text
+        assert "The alley held its secrets." in text
+
+    async def test_game_export_no_completed_acts_returns_404(self, client: AsyncClient, db) -> None:
+        """Game with no completed act narratives returns 404."""
+        game_id = await _create_active_game(client, db)
+
+        r = await client.get(f"/games/{game_id}/export", follow_redirects=False)
+        assert r.status_code == 404
+
+    async def test_game_export_non_member_returns_403(self, client: AsyncClient, db) -> None:
+        """Non-member cannot export a game narrative."""
+        game_id = await _create_active_game(client, db)
+        await self._setup_game_with_narratives(db, game_id)
+
+        await _login(client, 2)
+        r = await client.get(f"/games/{game_id}/export", follow_redirects=False)
+        assert r.status_code == 403
+
+    async def test_acts_page_shows_export_link_when_exportable(
+        self, client: AsyncClient, db
+    ) -> None:
+        """Acts list page shows the full-game export link when a completed act has a narrative."""
+        game_id = await _create_active_game(client, db)
+        await self._setup_game_with_narratives(db, game_id)
+
+        r = await client.get(f"/games/{game_id}/acts", follow_redirects=False)
+        assert r.status_code == 200
+        assert b"Export all narratives" in r.content
+
+    async def test_acts_page_hides_export_link_when_no_narratives(
+        self, client: AsyncClient, db
+    ) -> None:
+        """Acts list page hides the export link when no completed acts have narratives."""
+        game_id = await _create_active_game(client, db)
+
+        r = await client.get(f"/games/{game_id}/acts", follow_redirects=False)
+        assert r.status_code == 200
+        assert b"Export all narratives" not in r.content
