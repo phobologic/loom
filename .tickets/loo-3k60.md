@@ -1,6 +1,6 @@
 ---
 id: loo-3k60
-status: open
+status: closed
 deps: [loo-mr8d]
 links: []
 created: 2026-02-27T05:35:59Z
