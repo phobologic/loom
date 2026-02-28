@@ -62,6 +62,17 @@ class ProseExpansion(BaseModel):
     )
 
 
+class SceneNarrativeResponse(BaseModel):
+    narrative: str = Field(
+        description=(
+            "A complete prose narrative of the scene, written as literary collaborative-fiction "
+            "in third-person past tense. Weave all the provided events into a coherent, "
+            "scene-length narrative. Match the game's established narrative voice. "
+            "Do not introduce new events or characters not present in the source material."
+        ),
+    )
+
+
 class ConsistencyCheckResponse(BaseModel):
     flags: list[str] = Field(
         max_length=5,

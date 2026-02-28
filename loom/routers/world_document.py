@@ -19,6 +19,9 @@ from loom.ai.client import (
     evaluate_tension_adjustment,
 )
 from loom.ai.client import (
+    generate_scene_narrative as _ai_generate_scene_narrative,
+)
+from loom.ai.client import (
     generate_world_document as _ai_generate_world_document,
 )
 from loom.ai.client import (
@@ -303,6 +306,37 @@ async def _suggest_character_updates_for_scene(
     await asyncio.gather(*[_process_one(c) for c in owned_characters])
 
 
+async def _compile_scene_narrative(scene: Scene, game: Game, db: AsyncSession) -> None:
+    """Generate and store a prose narrative for a completed scene.
+
+    Skipped when auto_generate_narrative is disabled. AI failures are logged but
+    do not roll back scene completion. No separate commit — caller commits.
+    """
+    if not game.auto_generate_narrative:
+        return
+
+    result = await db.execute(
+        select(Scene)
+        .where(Scene.id == scene.id)
+        .options(
+            selectinload(Scene.act),
+            selectinload(Scene.beats).selectinload(Beat.events),
+            selectinload(Scene.characters_present),
+        )
+    )
+    full_scene = result.scalar_one_or_none()
+    if full_scene is None:
+        return
+
+    try:
+        narrative = await _ai_generate_scene_narrative(game, full_scene, db=db, game_id=game.id)
+    except Exception:
+        logger.exception("Failed to generate scene narrative for scene %d", scene.id)
+        return
+
+    full_scene.narrative = narrative
+
+
 async def create_world_doc_and_proposal(
     game: Game,
     proposer_id: int,
@@ -541,6 +575,7 @@ async def cast_vote(
             proposal.scene.status = SceneStatus.complete
             await _create_tension_adjustment_proposal(proposal.scene, game, db)
             await _suggest_character_updates_for_scene(proposal.scene, game, db)
+            await _compile_scene_narrative(proposal.scene, game, db)
         elif proposal.proposal_type == ProposalType.act_complete and proposal.act is not None:
             proposal.act.status = ActStatus.complete
             for scene in proposal.act.scenes:

@@ -191,7 +191,16 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
-## 19. Tension adjustment on scene completion
+## 19. Scene narrative on completion
+
+**Preconditions:** Active scene with at least one canon beat. `auto_generate_narrative` is enabled (default). Alice is a member.
+**Actions:** Alice completes the scene (single-player auto-approve or multi-player vote). Navigate to the scene detail page.
+**Pass criteria:** A "Scene Narrative" section appears below the completion status, containing AI-generated prose. The narrative is read-only (no edit controls). If `auto_generate_narrative` is disabled on the game, the section does not appear.
+**Severity if broken:** P1
+
+---
+
+## 19b. Tension adjustment on scene completion
 
 **Preconditions:** Scene has just been completed (workflow 16 done). In a multi-player game, all members present.
 **Actions:** After scene completion vote passes, navigate to the scene detail page. Observe the "Tension Adjustment" section with the AI's recommendation (+1/-1/0) and rationale explaining scene-level and arc-level reasoning. In a single-player game, tension adjusts automatically (no voting section). In a multi-player game, each player votes +1 (Escalate), 0 (Hold steady), or -1 (Ease tension). After all players have voted, reload the page.

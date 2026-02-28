@@ -495,6 +495,7 @@ class Scene(TimestampMixin, Base):
     tension: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     tension_carry_forward: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    narrative: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     act: Mapped[Act] = relationship(back_populates="scenes")
     beats: Mapped[list[Beat]] = relationship(back_populates="scene", cascade="all, delete-orphan")

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from loom.ai.context import (
     assemble_scene_context,
+    assemble_scene_narrative_context,
     format_tension_context,
     scene_context_components,
 )
@@ -31,6 +32,7 @@ from loom.ai.schemas import (
     OracleResponse,
     ProseExpansion,
     RelationshipSuggestionsResponse,
+    SceneNarrativeResponse,
     SynthesisResponse,
     TensionAdjustmentResponse,
     WorldDocumentResponse,
@@ -971,3 +973,68 @@ async def suggest_relationships(
         )
         for s in response.suggestions
     ]
+
+
+async def generate_scene_narrative(
+    game: Game,
+    scene: Scene,
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> str:
+    """Generate a compiled prose narrative for a completed scene.
+
+    Weaves all narrative, roll, oracle, and fortune-roll events from the scene's
+    canon beats into a single coherent prose narrative in the game's voice.
+    OOC events are excluded.
+
+    Args:
+        game: Fully loaded game (world_document, narrative_voice, safety_tools loaded).
+        scene: Completed scene (act, beats with events, and characters_present loaded).
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        A prose narrative string for the completed scene.
+    """
+    scene_ctx = assemble_scene_narrative_context(game, scene)
+    context_comps = scene_context_components(game, scene)
+
+    system = (
+        "You are a prose author for a collaborative tabletop RPG. "
+        "Your role is to write a complete scene narrative that weaves together "
+        "all the events of the scene into coherent literary prose — third person, "
+        "past tense, matching the game's narrative voice. "
+        "Include all significant story events from the provided material. "
+        "Do not introduce new events or characters not present in the source. "
+        "Respect all safety tool boundaries."
+    )
+
+    voice_instruction = (
+        f"Apply this narrative voice: {game.narrative_voice}"
+        if game.narrative_voice
+        else "Match the narrative voice implied by the world document above."
+    )
+
+    prompt = f"{scene_ctx}\n\nWrite a complete scene narrative in past tense. {voice_instruction}"
+
+    model = settings.ai_model_creative
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt=prompt,
+        model=model,
+        max_tokens=1024,
+        response_model=SceneNarrativeResponse,
+    )
+
+    if db is not None:
+        await _log_usage(
+            db,
+            feature="generate_scene_narrative",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
+    return response.narrative

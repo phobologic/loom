@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from starlette.requests import Request
 
 from loom.ai.client import check_beat_consistency, expand_beat_prose
+from loom.ai.client import generate_scene_narrative as _ai_generate_scene_narrative
 from loom.database import AsyncSessionLocal, get_db
 from loom.dependencies import get_current_user
 from loom.dice import DiceError
@@ -617,6 +618,7 @@ async def propose_scene_complete(
     if auto_approved:
         proposal.status = ProposalStatus.approved
         scene.status = SceneStatus.complete
+        await _compile_scene_narrative(scene, game, db)
 
     link = f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}"
     label = scene.guiding_question[:60]
@@ -863,6 +865,41 @@ def _should_offer_prose(member: GameMember, user: User, narrative_events: list[E
             len((e.content or "").split()) < user.prose_threshold_words for e in narrative_events
         )
     return True  # "always"
+
+
+async def _compile_scene_narrative(scene: Scene, game: Game, db: AsyncSession) -> None:
+    """Generate and store a prose narrative for a completed scene.
+
+    Performs a full re-query to load world_document, safety_tools, and all beats.
+    AI failures are logged but do not roll back scene completion. No separate commit.
+    """
+    if not game.auto_generate_narrative:
+        return
+
+    result = await db.execute(
+        select(Scene)
+        .where(Scene.id == scene.id)
+        .options(
+            selectinload(Scene.act).selectinload(Act.game).selectinload(Game.world_document),
+            selectinload(Scene.act).selectinload(Act.game).selectinload(Game.safety_tools),
+            selectinload(Scene.beats).selectinload(Beat.events),
+            selectinload(Scene.characters_present),
+        )
+    )
+    full_scene = result.scalar_one_or_none()
+    if full_scene is None:
+        return
+
+    full_game = full_scene.act.game
+    try:
+        narrative = await _ai_generate_scene_narrative(
+            full_game, full_scene, db=db, game_id=game.id
+        )
+    except Exception:
+        logger.exception("Failed to generate scene narrative for scene %d", scene.id)
+        return
+
+    full_scene.narrative = narrative
 
 
 async def _load_scene_for_consistency_check(scene_id: int, db: AsyncSession) -> Scene | None:

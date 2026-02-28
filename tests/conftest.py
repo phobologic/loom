@@ -135,6 +135,11 @@ def mock_ai(monkeypatch):
     ):
         return ([], [])
 
+    async def _generate_scene_narrative(game, scene, *, db=None, game_id=None):
+        return (
+            "The scene unfolded with quiet tension, each moment charged with unspoken possibility."
+        )
+
     monkeypatch.setattr("loom.ai.client.oracle_interpretations", _oracle_interpretations)
     monkeypatch.setattr("loom.ai.client.session0_synthesis", _session0_synthesis)
     monkeypatch.setattr("loom.ai.client.generate_world_document", _generate_world_document)
@@ -157,6 +162,13 @@ def mock_ai(monkeypatch):
     monkeypatch.setattr("loom.ai.client.suggest_relationships", _suggest_relationships)
     monkeypatch.setattr(
         "loom.routers.relationships._ai_suggest_relationships", _suggest_relationships
+    )
+    monkeypatch.setattr("loom.ai.client.generate_scene_narrative", _generate_scene_narrative)
+    monkeypatch.setattr(
+        "loom.routers.world_document._ai_generate_scene_narrative", _generate_scene_narrative
+    )
+    monkeypatch.setattr(
+        "loom.routers.scenes._ai_generate_scene_narrative", _generate_scene_narrative
     )
 
     # Also patch the imported names in the routers so the monkeypatches take effect

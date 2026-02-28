@@ -7,7 +7,7 @@ for inclusion in AI system and user prompts.
 
 from __future__ import annotations
 
-from loom.models import BeatStatus, Game, Scene
+from loom.models import BeatStatus, EventType, Game, Scene
 
 
 def format_safety_tools_context(tools: list) -> str:
@@ -161,3 +161,87 @@ def scene_context_components(game: Game, scene: Scene) -> list[str]:
     if game.safety_tools:
         components.append("safety_tools")
     return components
+
+
+_NARRATIVE_EVENT_TYPES = {
+    EventType.narrative,
+    EventType.roll,
+    EventType.oracle,
+    EventType.fortune_roll,
+}
+
+
+def assemble_scene_narrative_context(game: Game, scene: Scene) -> str:
+    """Build a context block for compiling a completed scene's prose narrative.
+
+    Similar to assemble_scene_context but includes ALL canon beats (no window cap)
+    and explicitly filters out OOC events. Formats non-narrative events (rolls,
+    oracles, fortune rolls) with enough detail for the AI to include them accurately.
+
+    Args:
+        game: Game instance (world_document, narrative_voice, and safety_tools loaded).
+        scene: Scene instance (act, beats with events, and characters_present loaded).
+
+    Returns:
+        A formatted multi-section context string.
+    """
+    act = scene.act
+    parts: list[str] = []
+
+    if game.world_document and game.world_document.content:
+        parts.append(f"WORLD DOCUMENT:\n{game.world_document.content}")
+
+    if game.narrative_voice:
+        parts.append(f"NARRATIVE VOICE: {game.narrative_voice}")
+
+    parts.append(f"ACT GUIDING QUESTION: {act.guiding_question}")
+
+    scene_header = f"SCENE GUIDING QUESTION: {scene.guiding_question}"
+    if scene.location:
+        scene_header += f"\nLocation: {scene.location}"
+    parts.append(scene_header)
+
+    if scene.characters_present:
+        char_lines = []
+        for char in scene.characters_present:
+            entry = char.name
+            if char.description:
+                entry += f": {char.description}"
+            if char.voice_notes:
+                entry += f" [Voice: {char.voice_notes}]"
+            char_lines.append(f"  - {entry}")
+        parts.append("CHARACTERS IN SCENE:\n" + "\n".join(char_lines))
+
+    # All canon beats in order, narrative event types only
+    canon_beats = sorted(
+        [b for b in scene.beats if b.status == BeatStatus.canon],
+        key=lambda b: b.order,
+    )
+    if canon_beats:
+        snippets: list[str] = []
+        for beat in canon_beats:
+            for event in sorted(beat.events, key=lambda e: e.order):
+                if event.type not in _NARRATIVE_EVENT_TYPES:
+                    continue
+                if event.type == EventType.narrative and event.content:
+                    snippets.append(f"  - {event.content}")
+                elif event.type == EventType.roll and event.content:
+                    result_suffix = (
+                        f" [Roll: {event.roll_notation} → {event.roll_result}]"
+                        if event.roll_notation and event.roll_result
+                        else ""
+                    )
+                    snippets.append(f"  - {event.content}{result_suffix}")
+                elif event.type == EventType.oracle and event.oracle_selected_interpretation:
+                    snippets.append(f"  - [Oracle] {event.oracle_selected_interpretation}")
+                elif event.type == EventType.fortune_roll and event.content:
+                    snippets.append(f"  - [Fortune Roll] {event.content}")
+        if snippets:
+            parts.append("SCENE EVENTS (chronological, OOC excluded):\n" + "\n".join(snippets))
+
+    if game.safety_tools:
+        safety_ctx = format_safety_tools_context(game.safety_tools)
+        if safety_ctx:
+            parts.append(safety_ctx)
+
+    return "\n\n".join(parts)

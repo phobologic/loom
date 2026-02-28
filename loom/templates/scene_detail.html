@@ -152,6 +152,13 @@
   {% endif %}
 </section>
 
+{% if scene.narrative %}
+<section style="margin-top:2rem; padding:1rem; background:#f8f4ee; border-left:4px solid #8b6914;">
+  <h2 style="margin-top:0; font-size:1.1rem;">Scene Narrative</h2>
+  <div style="white-space:pre-wrap; font-style:italic; line-height:1.7;">{{ scene.narrative }}</div>
+</section>
+{% endif %}
+
 {% if tension_adj_proposal %}
 <section style="margin-top:1.5rem; border-top:1px solid #ddd; padding-top:1rem;">
   <h2>Tension Adjustment</h2>

@@ -1517,6 +1517,111 @@ class TestSceneCompletion:
         assert r.status_code == 200
         assert f"/scenes/{scene_id}".encode() in r.content
 
+    async def test_narrative_generated_on_auto_approve(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """Scene completion in a single-player game triggers narrative generation."""
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+
+        # Submit a canon beat so there is content to narrate
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("The hero strides through the fog."),
+            follow_redirects=False,
+        )
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+
+        scene = await _get_scene(scene_id, db)
+        assert scene.narrative is not None
+        assert len(scene.narrative) > 0
+
+    async def test_narrative_skipped_when_disabled(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """auto_generate_narrative=False suppresses narrative generation."""
+        game_id = await _create_active_game(client, db)
+
+        # Disable auto-narrative on the game
+        game_result = await db.execute(select(Game).where(Game.id == game_id))
+        game = game_result.scalar_one()
+        game.auto_generate_narrative = False
+        await db.commit()
+
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+
+        scene = await _get_scene(scene_id, db)
+        assert scene.narrative is None
+
+    async def test_narrative_generated_on_vote_approval(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """Vote-approved scene completion triggers narrative generation."""
+        game_id = await _create_active_game(client, db, extra_members=[2])
+        await _login(client, 1)
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+
+        # Submit a canon beat
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/beats",
+            data=_narrative_data("Shadows gather at the edge of the firelight."),
+            follow_redirects=False,
+        )
+
+        # Propose completion (stays open — 2 players)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+        proposals = await _get_proposals(game_id, db)
+        proposal = next(p for p in proposals if p.proposal_type == ProposalType.scene_complete)
+
+        # Second player votes yes → approves
+        await _login(client, 2)
+        await client.post(
+            f"/games/{game_id}/proposals/{proposal.id}/vote",
+            data={"choice": "yes"},
+            follow_redirects=False,
+        )
+
+        scene = await _get_scene(scene_id, db)
+        assert scene.status == SceneStatus.complete
+        assert scene.narrative is not None
+        assert len(scene.narrative) > 0
+
+    async def test_narrative_displayed_on_scene_detail(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        """Completed scene detail page shows the narrative when present."""
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert r.status_code == 200
+        assert b"Scene Narrative" in r.content
+        # The mock narrative text should appear in the page
+        assert b"quiet tension" in r.content
+
 
 # ---------------------------------------------------------------------------
 # Challenge a beat
