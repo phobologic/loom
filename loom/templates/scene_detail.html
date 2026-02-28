@@ -55,6 +55,21 @@
 </div>
 {% endif %}
 
+{% if scene_completion_suggestion and scene.status.value == "active" and not scene_complete_proposal %}
+<div style="margin-top:1rem; padding:0.75rem 1rem; background:#e8f4e8; border:1px solid #5a9a5a; border-radius:4px; font-size:0.9rem;">
+  <strong>AI nudge</strong> <span style="color:#666; font-size:0.82rem;">(confidence {{ scene_completion_suggestion.confidence_score }}/10)</span>:
+  {{ scene_completion_suggestion.ai_rationale }}
+  <div style="margin-top:0.5rem; display:flex; gap:0.75rem; align-items:center;">
+    <form method="post" action="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/complete" style="margin:0;">
+      <button type="submit" style="background:#4a8a4a; color:#fff; border:none; padding:0.3rem 0.75rem; border-radius:3px; cursor:pointer;">Propose Scene Completion</button>
+    </form>
+    <form method="post" action="/games/{{ game.id }}/acts/{{ act.id }}/scenes/{{ scene.id }}/completion-suggestion/{{ scene_completion_suggestion.id }}/dismiss" style="margin:0;">
+      <button type="submit" style="background:none; border:1px solid #888; padding:0.3rem 0.75rem; border-radius:3px; cursor:pointer; color:#555;">Dismiss</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 {% if active_spotlight and active_spotlight.waiting_for_character %}
 <div style="margin-top:1rem; padding:0.6rem 1rem; background:#fff4e0; border:1px solid #d09030; border-radius:4px; font-size:0.9rem;">
   &#x23F3; <strong>{{ active_spotlight.waiting_for_character.name }}</strong> is in the spotlight &mdash; someone is waiting for a response.

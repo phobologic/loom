@@ -266,6 +266,25 @@ class NarrativeVoiceSuggestions(BaseModel):
     )
 
 
+class SceneCompletionNudgeResponse(BaseModel):
+    confidence: int = Field(
+        ge=1,
+        le=10,
+        description=(
+            "Confidence that the scene's guiding question has been answered, on a scale of 1-10. "
+            "1-3: clearly not resolved. 4-5: partially addressed but scene still has momentum. "
+            "6-7: probably answered, though some threads remain. 8-10: clearly resolved."
+        ),
+    )
+    rationale: str = Field(
+        description=(
+            "If confidence >= 6: a brief, player-facing explanation (1-2 sentences) of "
+            "why the guiding question seems answered. Reference specific events from the beats. "
+            "If confidence < 6: leave this empty string."
+        ),
+    )
+
+
 class TensionAdjustmentResponse(BaseModel):
     delta: Literal[-1, 0, 1] = Field(
         description=(

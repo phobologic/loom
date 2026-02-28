@@ -192,6 +192,7 @@ class NotificationType(str, enum.Enum):
     world_entry_suggested = "world_entry_suggested"
     relationship_created = "relationship_created"
     relationship_suggested = "relationship_suggested"
+    scene_completion_suggested = "scene_completion_suggested"
 
 
 class WorldEntryType(str, enum.Enum):
@@ -243,6 +244,14 @@ class CharacterUpdateStatus(str, enum.Enum):
     pending = "pending"
     accepted = "accepted"
     dismissed = "dismissed"
+
+
+class SceneCompletionSuggestionStatus(str, enum.Enum):
+    """Lifecycle status of an AI scene-completion nudge."""
+
+    pending = "pending"  # AI said yes — shown to players
+    dismissed = "dismissed"  # player dismissed it
+    evaluated = "evaluated"  # AI said no — tracking only, not shown
 
 
 # ---------------------------------------------------------------------------
@@ -818,6 +827,30 @@ class CharacterUpdateSuggestion(TimestampMixin, Base):
         if self.referenced_beat_ids is None:
             return []
         return json.loads(self.referenced_beat_ids)
+
+
+class SceneCompletionSuggestion(TimestampMixin, Base):
+    """An AI-generated nudge suggesting the scene's guiding question may be answered."""
+
+    __tablename__ = "scene_completion_suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scene_id: Mapped[int] = mapped_column(
+        ForeignKey("scenes.id", ondelete="CASCADE"), nullable=False
+    )
+    last_checked_beat_id: Mapped[int | None] = mapped_column(
+        ForeignKey("beats.id", ondelete="SET NULL"), nullable=True
+    )
+    ai_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[SceneCompletionSuggestionStatus] = mapped_column(
+        Enum(SceneCompletionSuggestionStatus, native_enum=False),
+        nullable=False,
+        default=SceneCompletionSuggestionStatus.pending,
+    )
+
+    scene: Mapped[Scene] = relationship()
+    last_checked_beat: Mapped[Beat | None] = relationship()
 
 
 class Session0Prompt(TimestampMixin, Base):

@@ -14,6 +14,7 @@ from starlette.requests import Request
 
 from loom.ai.client import check_beat_consistency, expand_beat_prose
 from loom.ai.client import generate_scene_narrative as _ai_generate_scene_narrative
+from loom.ai.client import suggest_scene_completion as _ai_suggest_scene_completion
 from loom.database import AsyncSessionLocal, get_db
 from loom.dependencies import get_current_user
 from loom.dice import DiceError
@@ -38,6 +39,8 @@ from loom.models import (
     ProposalStatus,
     ProposalType,
     Scene,
+    SceneCompletionSuggestion,
+    SceneCompletionSuggestionStatus,
     SceneStatus,
     User,
     Vote,
@@ -614,6 +617,16 @@ async def propose_scene_complete(
 
     db.add(Vote(proposal_id=proposal.id, voter_id=current_user.id, choice=VoteChoice.yes))
 
+    # Dismiss any pending AI scene-completion nudge now that a proposal is underway
+    pending_suggestion = await db.scalar(
+        select(SceneCompletionSuggestion).where(
+            SceneCompletionSuggestion.scene_id == scene.id,
+            SceneCompletionSuggestion.status == SceneCompletionSuggestionStatus.pending,
+        )
+    )
+    if pending_suggestion is not None:
+        pending_suggestion.status = SceneCompletionSuggestionStatus.dismissed
+
     auto_approved = is_approved(1, total_players)
     if auto_approved:
         proposal.status = ProposalStatus.approved
@@ -646,12 +659,55 @@ async def propose_scene_complete(
     )
 
 
+@router.post(
+    "/games/{game_id}/acts/{act_id}/scenes/{scene_id}/completion-suggestion/{suggestion_id}/dismiss",
+    response_class=RedirectResponse,
+)
+async def dismiss_scene_completion_suggestion(
+    game_id: int,
+    act_id: int,
+    scene_id: int,
+    suggestion_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Dismiss an AI scene-completion nudge."""
+    result = await db.execute(
+        select(SceneCompletionSuggestion)
+        .where(SceneCompletionSuggestion.id == suggestion_id)
+        .options(
+            selectinload(SceneCompletionSuggestion.scene)
+            .selectinload(Scene.act)
+            .selectinload(Act.game)
+            .selectinload(Game.members)
+        )
+    )
+    suggestion = result.scalar_one_or_none()
+    if suggestion is None or suggestion.scene_id != scene_id:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    scene = suggestion.scene
+    if scene.act.id != act_id or scene.act.game.id != game_id:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    game = scene.act.game
+    if _find_membership(game, current_user.id) is None:
+        raise HTTPException(status_code=403, detail="You are not a member of this game")
+
+    suggestion.status = SceneCompletionSuggestionStatus.dismissed
+    await db.commit()
+    return RedirectResponse(
+        url=f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", status_code=303
+    )
+
+
 @router.get("/games/{game_id}/acts/{act_id}/scenes/{scene_id}", response_class=HTMLResponse)
 async def scene_detail(
     game_id: int,
     act_id: int,
     scene_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     filter: str = "all",
     nudge: int | None = Query(None),
     current_user: User = Depends(get_current_user),
@@ -763,6 +819,44 @@ async def scene_detail(
     # Characters present in this scene not owned by the current user (for spotlight dropdown)
     spotlightable_chars = [c for c in scene.characters_present if c.owner_id != current_user.id]
 
+    # AI scene-completion nudge: load any pending suggestion for display
+    scene_completion_suggestion = await db.scalar(
+        select(SceneCompletionSuggestion).where(
+            SceneCompletionSuggestion.scene_id == scene.id,
+            SceneCompletionSuggestion.status == SceneCompletionSuggestionStatus.pending,
+        )
+    )
+
+    # Fire background AI check if conditions are met (page load only, not HTMX poll)
+    all_canon_beats = [
+        b for b in sorted(scene.beats, key=lambda b: b.order) if b.status == BeatStatus.canon
+    ]
+    ic_canon_beats = [b for b in all_canon_beats if _beat_is_ic(b)]
+    if (
+        scene.status == SceneStatus.active
+        and scene_completion_suggestion is None
+        and scene_complete_proposal is None
+        and len(ic_canon_beats) >= _SCENE_COMPLETION_NUDGE_MIN_IC_BEATS
+    ):
+        last_check = await db.scalar(
+            select(SceneCompletionSuggestion)
+            .where(SceneCompletionSuggestion.scene_id == scene.id)
+            .order_by(SceneCompletionSuggestion.created_at.desc())
+            .limit(1)
+            .options(selectinload(SceneCompletionSuggestion.last_checked_beat))
+        )
+        if last_check is not None and last_check.last_checked_beat is not None:
+            checked_order = last_check.last_checked_beat.order
+            beats_since = sum(1 for b in ic_canon_beats if b.order > checked_order)
+        else:
+            beats_since = len(ic_canon_beats)
+
+        if beats_since >= _SCENE_COMPLETION_NUDGE_RECHECK_INTERVAL:
+            last_beat_id = ic_canon_beats[-1].id
+            background_tasks.add_task(
+                _check_and_suggest_scene_completion, scene.id, game.id, last_beat_id
+            )
+
     return templates.TemplateResponse(
         request,
         "scene_detail.html",
@@ -795,6 +889,7 @@ async def scene_detail(
             "nudge": nudge,
             "contribution_counts": contribution_counts,
             "active_spotlight": active_spotlight,
+            "scene_completion_suggestion": scene_completion_suggestion,
             "spotlightable_chars": spotlightable_chars,
         },
     )
@@ -848,6 +943,102 @@ async def _generate_prose_for_beat(beat_id: int, game_id: int) -> None:
             await db.commit()
     except Exception:
         logger.exception("Failed to generate prose expansion for beat %d", beat_id)
+
+
+_SCENE_COMPLETION_NUDGE_THRESHOLD = 6  # confidence score (1-10) required to show the nudge
+_SCENE_COMPLETION_NUDGE_MIN_IC_BEATS = 5  # minimum IC canon beats before checking
+_SCENE_COMPLETION_NUDGE_RECHECK_INTERVAL = 5  # IC canon beats between re-checks after dismissal
+
+
+async def _check_and_suggest_scene_completion(
+    scene_id: int, game_id: int, last_beat_id: int
+) -> None:
+    """Background task: check if AI should nudge players to complete the scene.
+
+    Opens its own database session. Failures are logged but do not surface to the user.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Scene)
+                .where(Scene.id == scene_id)
+                .options(
+                    selectinload(Scene.beats).selectinload(Beat.events),
+                    selectinload(Scene.act)
+                    .selectinload(Act.game)
+                    .selectinload(Game.world_document),
+                    selectinload(Scene.act).selectinload(Act.game).selectinload(Game.members),
+                    selectinload(Scene.act)
+                    .selectinload(Act.game)
+                    .selectinload(Game.proposals)
+                    .selectinload(VoteProposal.votes),
+                )
+            )
+            scene = result.scalar_one_or_none()
+            if scene is None:
+                return
+            if scene.status != SceneStatus.active:
+                return
+
+            game = scene.act.game
+
+            # Guard: open scene_complete proposal already exists
+            has_open_proposal = any(
+                p.status == ProposalStatus.open
+                and p.proposal_type == ProposalType.scene_complete
+                and p.scene_id == scene.id
+                for p in game.proposals
+            )
+            if has_open_proposal:
+                return
+
+            # Guard: pending suggestion already exists
+            existing_pending = await db.scalar(
+                select(SceneCompletionSuggestion).where(
+                    SceneCompletionSuggestion.scene_id == scene.id,
+                    SceneCompletionSuggestion.status == SceneCompletionSuggestionStatus.pending,
+                )
+            )
+            if existing_pending is not None:
+                return
+
+            confidence, rationale = await _ai_suggest_scene_completion(
+                game, scene, db=db, game_id=game_id
+            )
+
+            if confidence >= _SCENE_COMPLETION_NUDGE_THRESHOLD:
+                suggestion = SceneCompletionSuggestion(
+                    scene_id=scene.id,
+                    last_checked_beat_id=last_beat_id,
+                    ai_rationale=rationale,
+                    confidence_score=confidence,
+                    status=SceneCompletionSuggestionStatus.pending,
+                )
+                db.add(suggestion)
+                await db.flush()
+                await notify_game_members(
+                    db,
+                    game=game,
+                    notification_type=NotificationType.scene_completion_suggested,
+                    message=(
+                        f"The AI thinks scene {scene.order}'s guiding question may be answered "
+                        f"(confidence {confidence}/10)."
+                    ),
+                    link=f"/games/{game.id}/acts/{scene.act.id}/scenes/{scene.id}",
+                )
+            else:
+                suggestion = SceneCompletionSuggestion(
+                    scene_id=scene.id,
+                    last_checked_beat_id=last_beat_id,
+                    ai_rationale=None,
+                    confidence_score=confidence,
+                    status=SceneCompletionSuggestionStatus.evaluated,
+                )
+                db.add(suggestion)
+
+            await db.commit()
+    except Exception:
+        logger.exception("Failed to check scene completion suggestion for scene %d", scene_id)
 
 
 def _effective_prose_mode(member: GameMember, user: User) -> str:

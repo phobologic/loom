@@ -143,6 +143,14 @@ def mock_ai(monkeypatch):
     async def _generate_act_narrative(game, act, *, db=None, game_id=None):
         return "The act unfolded across its scenes, building toward an inevitable conclusion."
 
+    async def _suggest_scene_completion(game, scene, *, db=None, game_id=None):
+        return (0, "")
+
+    monkeypatch.setattr("loom.ai.client.suggest_scene_completion", _suggest_scene_completion)
+    monkeypatch.setattr(
+        "loom.routers.scenes._ai_suggest_scene_completion", _suggest_scene_completion
+    )
+
     monkeypatch.setattr("loom.ai.client.oracle_interpretations", _oracle_interpretations)
     monkeypatch.setattr("loom.ai.client.session0_synthesis", _session0_synthesis)
     monkeypatch.setattr("loom.ai.client.generate_world_document", _generate_world_document)

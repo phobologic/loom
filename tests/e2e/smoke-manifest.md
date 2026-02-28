@@ -479,3 +479,20 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 - Downloaded files open as valid markdown with `#`/`##`/`###` headers for game, act, and scene titles and guiding questions.
 - Navigating directly to an export URL as a non-member returns a 403.
 **Severity if broken:** P2
+
+---
+
+## 36. AI nudge for scene completion (REQ-SCENE-003)
+
+**Preconditions:** A game in active play with an active scene. At least 5 IC canon beats must exist in the scene (so the AI check fires). A `SceneCompletionSuggestion` row with `status=pending` must exist for the scene (can be created directly via the DB for testing, or by waiting for the background task to fire with a high-confidence AI response).
+**Actions:**
+1. Navigate to the scene detail page. The green "AI nudge" card should be visible with the AI's rationale and confidence score, plus "Propose Scene Completion" and "Dismiss" buttons.
+2. Click "Dismiss". Verify the card disappears and the scene remains active with no completion proposal.
+3. With a fresh pending suggestion, click "Propose Scene Completion" from the nudge card. Verify a completion proposal is created and the nudge card no longer appears.
+**Pass criteria:**
+- The "AI nudge" card appears when a `pending` suggestion exists for an active scene with no open completion proposal.
+- Confidence score (e.g., "8/10") and rationale text are shown in the card.
+- "Dismiss" marks the suggestion dismissed and redirects back to the scene — nudge card gone.
+- "Propose Scene Completion" creates a completion proposal and auto-dismisses the nudge — card gone on next load.
+- No nudge card appears when the scene is complete or when a completion proposal is already open.
+**Severity if broken:** P2

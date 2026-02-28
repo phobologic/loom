@@ -25,6 +25,8 @@ from loom.models import (
     ProposalStatus,
     ProposalType,
     Scene,
+    SceneCompletionSuggestion,
+    SceneCompletionSuggestionStatus,
     SceneStatus,
     Vote,
     VoteChoice,
@@ -1621,6 +1623,173 @@ class TestSceneCompletion:
         assert b"Scene Narrative" in r.content
         # The mock narrative text should appear in the page
         assert b"quiet tension" in r.content
+
+
+# ---------------------------------------------------------------------------
+# AI scene-completion nudge
+# ---------------------------------------------------------------------------
+
+
+async def _get_completion_suggestions(
+    scene_id: int, db: AsyncSession
+) -> list[SceneCompletionSuggestion]:
+    db.expire_all()
+    result = await db.execute(
+        select(SceneCompletionSuggestion).where(SceneCompletionSuggestion.scene_id == scene_id)
+    )
+    return list(result.scalars().all())
+
+
+async def _create_pending_suggestion(
+    scene_id: int, db: AsyncSession, confidence: int = 8
+) -> SceneCompletionSuggestion:
+    """Helper: directly insert a pending suggestion row for a scene."""
+    suggestion = SceneCompletionSuggestion(
+        scene_id=scene_id,
+        ai_rationale="The guiding question appears resolved.",
+        confidence_score=confidence,
+        status=SceneCompletionSuggestionStatus.pending,
+    )
+    db.add(suggestion)
+    await db.commit()
+    db.expire_all()
+    result = await db.execute(
+        select(SceneCompletionSuggestion).where(
+            SceneCompletionSuggestion.scene_id == scene_id,
+            SceneCompletionSuggestion.status == SceneCompletionSuggestionStatus.pending,
+        )
+    )
+    return result.scalar_one()
+
+
+@pytest.mark.usefixtures("mock_ai")
+class TestSceneCompletionNudge:
+    async def test_pending_suggestion_shown_in_scene_detail(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+        await _create_pending_suggestion(scene_id, db)
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert r.status_code == 200
+        assert b"AI nudge" in r.content
+        assert b"confidence" in r.content
+        assert b"guiding question appears resolved" in r.content
+        assert b"Propose Scene Completion" in r.content
+        assert b"Dismiss" in r.content
+
+    async def test_no_nudge_shown_when_scene_complete(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+        await _create_pending_suggestion(scene_id, db)
+
+        # Complete the scene
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert r.status_code == 200
+        assert b"AI nudge" not in r.content
+
+    async def test_no_nudge_shown_when_proposal_open(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id = await _create_active_game(client, db, extra_members=[2])
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+        await _create_pending_suggestion(scene_id, db)
+
+        # Propose completion (needs multi-player to stay open)
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert r.status_code == 200
+        assert b"AI nudge" not in r.content
+
+    async def test_dismiss_marks_suggestion_dismissed(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+        suggestion = await _create_pending_suggestion(scene_id, db)
+        suggestion_id = suggestion.id
+
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/completion-suggestion/{suggestion_id}/dismiss",
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+        db.expire_all()
+        updated = await db.scalar(
+            select(SceneCompletionSuggestion).where(SceneCompletionSuggestion.id == suggestion_id)
+        )
+        assert updated is not None
+        assert updated.status == SceneCompletionSuggestionStatus.dismissed
+
+    async def test_dismiss_nonmember_forbidden(self, client: AsyncClient, db: AsyncSession) -> None:
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+        suggestion = await _create_pending_suggestion(scene_id, db)
+
+        await _login(client, 2)  # Bob — not a member
+        r = await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/completion-suggestion/{suggestion.id}/dismiss",
+            follow_redirects=False,
+        )
+        assert r.status_code == 403
+
+    async def test_propose_completion_auto_dismisses_pending_suggestion(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+        suggestion = await _create_pending_suggestion(scene_id, db)
+        suggestion_id = suggestion.id
+
+        await client.post(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}/complete",
+            follow_redirects=False,
+        )
+
+        db.expire_all()
+        updated = await db.scalar(
+            select(SceneCompletionSuggestion).where(SceneCompletionSuggestion.id == suggestion_id)
+        )
+        assert updated is not None
+        assert updated.status == SceneCompletionSuggestionStatus.dismissed
+
+    async def test_nudge_card_absent_without_suggestion(
+        self, client: AsyncClient, db: AsyncSession
+    ) -> None:
+        game_id = await _create_active_game(client, db)
+        act_id = await _create_active_act(game_id, db)
+        scene_id = await _create_active_scene(act_id, game_id, db)
+
+        r = await client.get(
+            f"/games/{game_id}/acts/{act_id}/scenes/{scene_id}", follow_redirects=False
+        )
+        assert r.status_code == 200
+        assert b"AI nudge" not in r.content
 
 
 # ---------------------------------------------------------------------------

@@ -34,6 +34,7 @@ from loom.ai.schemas import (
     OracleResponse,
     ProseExpansion,
     RelationshipSuggestionsResponse,
+    SceneCompletionNudgeResponse,
     SceneNarrativeResponse,
     SynthesisResponse,
     TensionAdjustmentResponse,
@@ -1113,3 +1114,92 @@ async def generate_act_narrative(
         )
 
     return response.narrative
+
+
+async def suggest_scene_completion(
+    game: Game,
+    scene: Scene,
+    *,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> tuple[int, str]:
+    """Evaluate whether a scene's guiding question has been answered.
+
+    Args:
+        game: Fully loaded game (world_document, safety_tools loaded).
+        scene: Active scene with beats and events loaded (canon beats only used).
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        (confidence, rationale) — confidence is 1-10 (6+ means nudge should be shown);
+        rationale is a brief player-facing explanation when confidence >= 6, else "".
+    """
+    from loom.models import BeatStatus
+
+    system = (
+        "You are monitoring a collaborative tabletop RPG scene. "
+        "Given the scene's guiding question and the canon beats so far, "
+        "rate your confidence (1-10) that the guiding question has been meaningfully answered. "
+        "Use 1-5 when the question is unresolved or the scene is still unfolding. "
+        "Use 6-10 when the question appears answered — higher scores mean clearer resolution. "
+        "Do not rate highly just because many beats have passed — "
+        "only if the narrative question is genuinely answered by specific events."
+    )
+
+    canon_beats = sorted(
+        [b for b in scene.beats if b.status == BeatStatus.canon],
+        key=lambda b: b.order,
+    )
+    beat_lines = []
+    for beat in canon_beats:
+        for event in beat.events:
+            if event.content:
+                beat_lines.append(f"- {event.content}")
+
+    prompt_parts: list[str] = []
+
+    if game.world_document and game.world_document.content:
+        prompt_parts.append(f"WORLD DOCUMENT:\n{game.world_document.content}")
+
+    prompt_parts.append(
+        f"SCENE GUIDING QUESTION: {scene.guiding_question}"
+        + (f"\nLocation: {scene.location}" if scene.location else "")
+    )
+
+    if beat_lines:
+        prompt_parts.append("CANON BEATS (in order):\n" + "\n".join(beat_lines))
+    else:
+        prompt_parts.append("CANON BEATS: (none recorded)")
+
+    prompt_parts.append(
+        "Has the guiding question above been meaningfully answered by the beats? "
+        "Respond with should_suggest and a brief rationale."
+    )
+
+    prompt = "\n\n".join(prompt_parts)
+
+    provider = get_provider()
+    model = settings.classification_model
+    response, usage = await provider.generate_structured(
+        system=system,
+        prompt=prompt,
+        response_model=SceneCompletionNudgeResponse,
+        model=model,
+        temperature=0.0,
+    )
+
+    if db is not None:
+        context_comps: list[str] = ["scene_guiding_question", "canon_beats"]
+        if game.world_document and game.world_document.content:
+            context_comps.insert(0, "world_document")
+        await _log_usage(
+            db,
+            feature="suggest_scene_completion",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
+    return response.confidence, response.rationale
