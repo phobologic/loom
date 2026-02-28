@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -52,6 +52,7 @@ from loom.models import (
 )
 from loom.notifications import create_notification
 from loom.rendering import templates
+from loom.routers.world_entries import _scan_beat_for_world_entries
 from loom.voting import (
     activate_act,
     activate_scene,
@@ -458,6 +459,7 @@ async def cast_vote(
     request: Request,
     choice: str = Form(...),
     suggestion: str = Form(""),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -532,6 +534,7 @@ async def cast_vote(
                 activate_scene(act.scenes, proposal.scene)
         elif proposal.proposal_type == ProposalType.beat_proposal and proposal.beat is not None:
             proposal.beat.status = BeatStatus.canon
+            background_tasks.add_task(_scan_beat_for_world_entries, proposal.beat.id, game_id)
         elif proposal.proposal_type == ProposalType.scene_complete and proposal.scene is not None:
             proposal.scene.status = SceneStatus.complete
             await _create_tension_adjustment_proposal(proposal.scene, game, db)

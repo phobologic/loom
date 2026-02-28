@@ -32,9 +32,10 @@ from loom.ai.schemas import (
     SynthesisResponse,
     TensionAdjustmentResponse,
     WorldDocumentResponse,
+    WorldEntrySuggestionsResponse,
 )
 from loom.config import settings
-from loom.models import AIUsageLog, Character, Game, Scene
+from loom.models import AIUsageLog, Character, Game, Scene, WorldEntry
 
 
 async def _log_usage(
@@ -717,3 +718,76 @@ async def suggest_character_updates(
         )
 
     return [(s.category, s.suggestion_text, s.reason, s.beat_ids) for s in response.suggestions]
+
+
+async def suggest_world_entries(
+    beat_text: str,
+    existing_entries: list[WorldEntry],
+    *,
+    game: Game | None = None,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> list[tuple[str, str, str, str]]:
+    """Scan a canon beat for new world elements worth tracking.
+
+    Args:
+        beat_text: The narrative text of the canon beat.
+        existing_entries: Current world entries for this game — used to avoid
+            re-suggesting things already tracked.
+        game: Game instance for world document context (optional).
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        A list of (entry_type, name, description, reason) tuples.
+        Empty list if no new trackable elements are found.
+    """
+    system = (
+        "You are a world-tracking assistant for a collaborative tabletop RPG. "
+        "Your job is to identify named locations, organizations, significant items, "
+        "and concepts introduced in a beat that don't already have world entries. "
+        "Only suggest things with clear story relevance that could recur in the fiction. "
+        "Do not suggest player characters, NPCs, or generic nouns."
+    )
+
+    prompt_parts: list[str] = []
+
+    if game is not None and game.world_document and game.world_document.content:
+        prompt_parts.append(f"WORLD DOCUMENT:\n{game.world_document.content}")
+
+    if existing_entries:
+        existing_lines = [f"  - {e.name} [{e.entry_type.value}]" for e in existing_entries]
+        prompt_parts.append("ALREADY TRACKED (do not suggest these):\n" + "\n".join(existing_lines))
+
+    prompt_parts.append(
+        f"CANON BEAT:\n{beat_text}\n\n"
+        "Identify any named world elements introduced in this beat that are not already "
+        "tracked above and are worth recording as world entries. "
+        "Return an empty list if nothing new warrants tracking."
+    )
+
+    model = settings.ai_model_classification
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt="\n\n".join(prompt_parts),
+        model=model,
+        max_tokens=512,
+        response_model=WorldEntrySuggestionsResponse,
+    )
+
+    if db is not None:
+        context_comps = ["beat_text"]
+        if game is not None and game.world_document:
+            context_comps.append("world_document")
+        if existing_entries:
+            context_comps.append("existing_entries")
+        await _log_usage(
+            db,
+            feature="suggest_world_entries",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
+    return [(s.entry_type, s.name, s.description, s.reason) for s in response.suggestions]

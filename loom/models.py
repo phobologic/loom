@@ -189,6 +189,7 @@ class NotificationType(str, enum.Enum):
     character_update_suggested = "character_update_suggested"
     npc_created = "npc_created"
     world_entry_created = "world_entry_created"
+    world_entry_suggested = "world_entry_suggested"
 
 
 class WorldEntryType(str, enum.Enum):
@@ -199,6 +200,14 @@ class WorldEntryType(str, enum.Enum):
     item = "item"
     concept = "concept"
     other = "other"
+
+
+class WorldEntrySuggestionStatus(str, enum.Enum):
+    """Lifecycle status of an AI-suggested world entry."""
+
+    pending = "pending"
+    accepted = "accepted"
+    dismissed = "dismissed"
 
 
 class CharacterUpdateCategory(str, enum.Enum):
@@ -378,6 +387,11 @@ class Game(TimestampMixin, Base):
         back_populates="game",
         cascade="all, delete-orphan",
         order_by="WorldEntry.entry_type, WorldEntry.name",
+    )
+    world_entry_suggestions: Mapped[list[WorldEntrySuggestion]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
+        order_by="WorldEntrySuggestion.created_at",
     )
 
 
@@ -657,6 +671,31 @@ class WorldEntry(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="world_entries")
+
+
+class WorldEntrySuggestion(TimestampMixin, Base):
+    """An AI-generated suggestion to create a new world entry based on beat content."""
+
+    __tablename__ = "world_entry_suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    beat_id: Mapped[int | None] = mapped_column(
+        ForeignKey("beats.id", ondelete="SET NULL"), nullable=True
+    )
+    suggested_type: Mapped[WorldEntryType] = mapped_column(
+        Enum(WorldEntryType, native_enum=False), nullable=False
+    )
+    suggested_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    suggested_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[WorldEntrySuggestionStatus] = mapped_column(
+        Enum(WorldEntrySuggestionStatus, native_enum=False),
+        nullable=False,
+        default=WorldEntrySuggestionStatus.pending,
+    )
+
+    game: Mapped[Game] = relationship(back_populates="world_entry_suggestions")
 
 
 class CharacterUpdateSuggestion(TimestampMixin, Base):

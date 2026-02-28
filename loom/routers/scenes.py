@@ -45,6 +45,7 @@ from loom.models import (
 )
 from loom.notifications import create_notification, notify_game_members
 from loom.rendering import templates
+from loom.routers.world_entries import _scan_beat_for_world_entries
 from loom.voting import activate_scene, approval_threshold, is_approved, resolve_tension_vote
 
 logger = logging.getLogger(__name__)
@@ -1168,6 +1169,10 @@ async def submit_beat(
         current_member, current_user, narrative_events_created
     ):
         background_tasks.add_task(_generate_prose_for_beat, beat.id, game.id)
+
+    # Scan canon beats for new world elements (REQ-WORLD-002)
+    if beat.status == BeatStatus.canon and narrative_events_created:
+        background_tasks.add_task(_scan_beat_for_world_entries, beat.id, game.id)
 
     redirect_url = f"{scene_link}?nudge={nudge_count}" if show_nudge else scene_link
     return RedirectResponse(url=redirect_url, status_code=303)

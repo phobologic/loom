@@ -366,3 +366,22 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 - Bob can successfully edit the entry and his changes are saved.
 - All other game members receive a "world entry created" notification when Alice creates the entry.
 **Severity if broken:** P2
+
+---
+
+## 32. AI-Suggested World Entries (REQ-WORLD-002)
+
+**Preconditions:** Active game with Alice and Bob as members. A `WorldEntrySuggestion` row with status `pending` exists for the game (can be seeded directly in the DB for testing, as the trigger is a background AI task).
+**Actions:**
+1. Alice navigates to `/games/{id}/world-entries`.
+2. The "AI Suggestions" section is visible with at least one pending suggestion.
+3. Alice clicks "Accept" on the first suggestion.
+4. Bob navigates to the world entries page and finds a second pending suggestion.
+5. Bob clicks "Dismiss" on that suggestion.
+**Pass criteria:**
+- The "AI Suggestions" section appears above the entries list only when there are pending suggestions; it is absent otherwise.
+- Each suggestion shows the name, type, description, and a brief reason.
+- Clicking "Accept" creates a world entry matching the suggestion, removes it from the suggestions list, and sends a `world_entry_created` notification to other members.
+- Clicking "Dismiss" removes the suggestion from view without creating an entry; no notification is sent.
+- Both Accept and Dismiss redirect back to `/games/{id}/world-entries`.
+**Severity if broken:** P2

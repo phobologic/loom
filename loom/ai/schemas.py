@@ -141,6 +141,50 @@ class NPCDetailSuggestions(BaseModel):
     )
 
 
+class WorldEntrySuggestionItem(BaseModel):
+    entry_type: Literal["location", "faction", "item", "concept", "other"] = Field(
+        description=(
+            "'location' for named places (buildings, cities, regions, landmarks); "
+            "'faction' for organizations, groups, guilds, or factions; "
+            "'item' for significant named objects, artifacts, or items; "
+            "'concept' for named ideas, religions, schools of thought, or cultural concepts; "
+            "'other' for significant named things that don't fit the above categories."
+        ),
+    )
+    name: str = Field(
+        description=(
+            "The name of the world element as it appears in the beat text. "
+            "Use the exact name from the fiction, not a paraphrase. "
+            "Maximum 150 characters."
+        ),
+    )
+    description: str = Field(
+        description=(
+            "A 1-3 sentence description of this element grounded in what the beat revealed. "
+            "Write in present-tense world-building prose. Do not speculate beyond the beat."
+        ),
+    )
+    reason: str = Field(
+        description=(
+            "One sentence explaining why this element warrants a world entry — "
+            "e.g. 'Named location introduced in this beat with significant story relevance.' "
+            "Be concise and direct."
+        ),
+    )
+
+
+class WorldEntrySuggestionsResponse(BaseModel):
+    suggestions: list[WorldEntrySuggestionItem] = Field(
+        max_length=4,
+        description=(
+            "New world elements introduced in this beat that don't already have entries. "
+            "Only suggest named locations, organizations, significant items, or concepts "
+            "that could recur in the fiction and are worth tracking. "
+            "Return an empty list if no new trackable elements are introduced."
+        ),
+    )
+
+
 class TensionAdjustmentResponse(BaseModel):
     delta: Literal[-1, 0, 1] = Field(
         description=(
