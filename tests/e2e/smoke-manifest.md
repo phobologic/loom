@@ -369,6 +369,42 @@ Ordered list of workflows tested by `/smoketest`. Each entry defines: preconditi
 
 ---
 
+## 33. Relationship Tracking (REQ-WORLD-003)
+
+**Preconditions:** Active game with Alice and Bob as members. At least two tracked entities exist (e.g., one NPC "Kira" and one NPC "Venn", or a character and a world entry).
+**Actions:**
+1. Alice navigates to `/games/{id}/relationships`.
+2. Alice uses the "Add Relationship" form: selects Entity A (NPC: Kira), enters label "rivals with", selects Entity B (NPC: Venn), and submits.
+3. Bob navigates to `/games/{id}/npcs`.
+4. Bob navigates to `/games/{id}/relationships` and clicks "Delete" on the relationship.
+**Pass criteria:**
+- The `/relationships` page loads with a nav link visible from world-entries and NPC pages.
+- After Alice creates the relationship, the page shows "Kira — rivals with — Venn".
+- On the NPCs page, each NPC that has relationships shows them inline (e.g., "→ rivals with Venn").
+- Bob receives a `relationship_created` notification when Alice adds the relationship.
+- Deleting the relationship removes it from the list; no entries remain.
+**Severity if broken:** P2
+
+---
+
+## 34. AI-Suggested Relationships (REQ-WORLD-003)
+
+**Preconditions:** Active game with a `RelationshipSuggestion` row (status `pending`) seeded directly, with two valid NPCs as the entities.
+**Actions:**
+1. Alice navigates to `/games/{id}/relationships`.
+2. The "AI-Suggested Relationships" section is visible with the pending suggestion.
+3. Alice clicks "Accept" on the suggestion.
+4. Bob seeds another suggestion and navigates to the page; Bob clicks "Dismiss".
+**Pass criteria:**
+- The suggestions banner appears only when pending suggestions exist; absent otherwise.
+- Each suggestion shows the two entity names, the label, and the reason.
+- Accepting creates a relationship row and marks the suggestion accepted; the suggestion disappears from the list.
+- Dismissing removes the suggestion without creating a relationship.
+- All members receive a `relationship_created` notification on accept.
+**Severity if broken:** P2
+
+---
+
 ## 32. AI-Suggested World Entries (REQ-WORLD-002)
 
 **Preconditions:** Active game with Alice and Bob as members. A `WorldEntrySuggestion` row with status `pending` exists for the game (can be seeded directly in the DB for testing, as the trigger is a background AI task).

@@ -99,6 +99,19 @@ def mock_ai(monkeypatch):
     ):
         return []
 
+    async def _suggest_relationships(
+        beat_text,
+        characters,
+        npcs,
+        world_entries,
+        existing_relationship_labels,
+        *,
+        game=None,
+        db=None,
+        game_id=None,
+    ):
+        return []
+
     async def _suggest_npc_details(
         beat_text,
         role,
@@ -129,6 +142,10 @@ def mock_ai(monkeypatch):
     monkeypatch.setattr("loom.ai.client.suggest_world_entries", _suggest_world_entries)
     monkeypatch.setattr(
         "loom.routers.world_entries._ai_suggest_world_entries", _suggest_world_entries
+    )
+    monkeypatch.setattr("loom.ai.client.suggest_relationships", _suggest_relationships)
+    monkeypatch.setattr(
+        "loom.routers.relationships._ai_suggest_relationships", _suggest_relationships
     )
 
     # Also patch the imported names in the routers so the monkeypatches take effect

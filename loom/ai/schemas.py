@@ -185,6 +185,50 @@ class WorldEntrySuggestionsResponse(BaseModel):
     )
 
 
+class RelationshipSuggestionItem(BaseModel):
+    entity_a_type: Literal["character", "npc", "world_entry"] = Field(
+        description=(
+            "Type of the first entity in the relationship: "
+            "'character' for player characters, 'npc' for non-player characters, "
+            "'world_entry' for locations, factions, items, or concepts."
+        ),
+    )
+    entity_a_id: int = Field(
+        description="Numeric ID of the first entity, as listed in the provided entity catalogue.",
+    )
+    entity_b_type: Literal["character", "npc", "world_entry"] = Field(
+        description="Type of the second entity in the relationship.",
+    )
+    entity_b_id: int = Field(
+        description="Numeric ID of the second entity, as listed in the provided entity catalogue.",
+    )
+    suggested_label: str = Field(
+        description=(
+            "A short, evocative relationship label describing how entity A relates to entity B "
+            "— e.g. 'rivals with', 'sworn to protect', 'secretly fears', 'owes a debt to'. "
+            "Phrase it as a verb or short phrase. Maximum 100 characters."
+        ),
+    )
+    reason: str = Field(
+        description=(
+            "One sentence explaining which event in the beat supports this relationship. "
+            "Be specific and cite the beat text."
+        ),
+    )
+
+
+class RelationshipSuggestionsResponse(BaseModel):
+    suggestions: list[RelationshipSuggestionItem] = Field(
+        max_length=4,
+        description=(
+            "New relationships between already-tracked entities that are supported by this beat. "
+            "Only suggest relationships grounded in specific events in the beat text. "
+            "Both entities must be from the provided catalogue — do not invent IDs. "
+            "Return an empty list if no clear new relationships are established."
+        ),
+    )
+
+
 class TensionAdjustmentResponse(BaseModel):
     delta: Literal[-1, 0, 1] = Field(
         description=(

@@ -51,6 +51,19 @@
       {% if npc.notes %}
         <p style="margin:0.25rem 0 0; color:#555;"><em>Notes: {{ npc.notes }}</em></p>
       {% endif %}
+      {% if npc_relationships and npc_relationships[npc.id] %}
+        <div style="margin-top:0.4rem; font-size:0.9em; color:#444;">
+          <strong>Relationships:</strong>
+          {% for item in npc_relationships[npc.id] %}
+            {% if item.direction == "a" %}
+              <span style="margin-right:0.5rem;">→ <em>{{ item.label }}</em> {{ item.other_name }}</span>
+            {% else %}
+              <span style="margin-right:0.5rem;">← <em>{{ item.label }}</em> {{ item.other_name }}</span>
+            {% endif %}
+          {% endfor %}
+          <a href="/games/{{ game.id }}/relationships" style="font-size:0.9em; margin-left:0.25rem;">(manage)</a>
+        </div>
+      {% endif %}
       {% if game.status.value != "archived" %}
       <a href="/games/{{ game.id }}/npcs/{{ npc.id }}/edit" style="font-size:0.9em;">Edit</a>
       {% endif %}

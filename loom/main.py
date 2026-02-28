@@ -26,6 +26,7 @@ from loom.routers import (
     oracles,
     pages,
     profile,
+    relationships,
     safety_tools,
     scenes,
     session0,
@@ -77,6 +78,7 @@ app.include_router(world_document.router)
 app.include_router(characters.router)
 app.include_router(npcs.router)
 app.include_router(world_entries.router)
+app.include_router(relationships.router)
 app.include_router(scenes.router)
 app.include_router(oracles.router)
 app.include_router(notifications.router)

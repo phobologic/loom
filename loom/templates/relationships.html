@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Relationships — {{ game.name }} — Loom{% endblock %}
+
+{% block content %}
+<h1>Relationships — {{ game.name }}</h1>
+<p><strong>Status:</strong> {{ game.status.value | capitalize }}</p>
+
+<nav>
+    <strong>Nav:</strong>
+    <a href="/games/{{ game.id }}">Dashboard</a> |
+    <a href="/games/{{ game.id }}/characters">Characters</a> |
+    <a href="/games/{{ game.id }}/npcs">NPCs</a> |
+    <a href="/games/{{ game.id }}/world-entries">World Entries</a> |
+    <a href="/games/{{ game.id }}/relationships">Relationships</a> |
+    <a href="/games/{{ game.id }}/safety-tools">Safety Tools</a> |
+    <a href="/games/{{ game.id }}/world-document">World Doc</a> |
+    <a href="/games/{{ game.id }}/settings">Settings</a>
+</nav>
+
+{% if enriched_suggestions %}
+<section style="margin-top:1.5rem; padding:0.75rem; border:1px solid #f0ad4e; background:#fffdf0;">
+  <h2>AI-Suggested Relationships ({{ enriched_suggestions | length }})</h2>
+  <p style="color:#555; font-size:0.9em;">The AI spotted these relationships based on recent beats. Accept to track them, or dismiss to ignore.</p>
+  <ul style="list-style:none; padding:0;">
+    {% for item in enriched_suggestions %}
+    <li style="margin-bottom:0.75rem; padding:0.6rem; border:1px solid #e0c070;">
+      <strong>{{ item.name_a }}</strong>
+      — <em>{{ item.sug.suggested_label }}</em> —
+      <strong>{{ item.name_b }}</strong>
+      <br>
+      <small style="color:#777;">{{ item.sug.reason }}</small>
+      <br>
+      <form method="post" action="/games/{{ game.id }}/relationship-suggestions/{{ item.sug.id }}/accept" style="display:inline;">
+        <button type="submit" style="margin-top:0.4rem;">Accept</button>
+      </form>
+      <form method="post" action="/games/{{ game.id }}/relationship-suggestions/{{ item.sug.id }}/dismiss" style="display:inline; margin-left:0.5rem;">
+        <button type="submit">Dismiss</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section style="margin-top:1.5rem;">
+  <h2>Relationships ({{ enriched_rels | length }})</h2>
+  {% if enriched_rels %}
+  <ul style="list-style:none; padding:0;">
+    {% for item in enriched_rels %}
+    <li style="margin-bottom:0.5rem; padding:0.6rem; border:1px solid #ddd; display:flex; align-items:center; gap:0.75rem;">
+      <span>
+        <strong>{{ item.name_a }}</strong>
+        — <em>{{ item.rel.label }}</em> —
+        <strong>{{ item.name_b }}</strong>
+      </span>
+      {% if game.status.value != "archived" %}
+      <form method="post" action="/games/{{ game.id }}/relationships/{{ item.rel.id }}/delete" style="margin-left:auto;">
+        <button type="submit" style="font-size:0.85em; color:#c00;">Delete</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No relationships tracked yet.</p>
+  {% endif %}
+</section>
+
+{% if game.status.value in ("active", "paused") %}
+<section style="margin-top:1.5rem; padding:0.75rem; border:1px solid #ccc;">
+  <h2>Add Relationship</h2>
+  {% if game.status.value == "paused" %}
+  <p style="color:#888;"><em>The game is paused. Relationship creation will resume when the game is active.</em></p>
+  {% else %}
+  <form method="post" action="/games/{{ game.id }}/relationships">
+    <div style="margin-bottom:0.75rem; display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+      <div>
+        <label for="entity_a_type"><strong>Entity A</strong></label><br>
+        <select id="entity_a_type" name="entity_a_type" required style="margin-right:0.3rem;">
+          <option value="">— type —</option>
+          {% if game.characters %}
+          <option value="character">Character</option>
+          {% endif %}
+          {% if game.npcs %}
+          <option value="npc">NPC</option>
+          {% endif %}
+          {% if game.world_entries %}
+          <option value="world_entry">World Entry</option>
+          {% endif %}
+        </select>
+        <select id="entity_a_id" name="entity_a_id" required>
+          <option value="">— name —</option>
+          {% for c in game.characters %}
+          <option value="{{ c.id }}" data-type="character">{{ c.name }} (character)</option>
+          {% endfor %}
+          {% for n in game.npcs %}
+          <option value="{{ n.id }}" data-type="npc">{{ n.name }} (NPC)</option>
+          {% endfor %}
+          {% for e in game.world_entries %}
+          <option value="{{ e.id }}" data-type="world_entry">{{ e.name }} ({{ e.entry_type.value }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="label"><strong>Relationship</strong></label><br>
+        <input id="label" type="text" name="label" placeholder="e.g. rivals with, allied to, fears" maxlength="100" required style="width:200px;">
+      </div>
+      <div>
+        <label for="entity_b_type"><strong>Entity B</strong></label><br>
+        <select id="entity_b_type" name="entity_b_type" required style="margin-right:0.3rem;">
+          <option value="">— type —</option>
+          {% if game.characters %}
+          <option value="character">Character</option>
+          {% endif %}
+          {% if game.npcs %}
+          <option value="npc">NPC</option>
+          {% endif %}
+          {% if game.world_entries %}
+          <option value="world_entry">World Entry</option>
+          {% endif %}
+        </select>
+        <select id="entity_b_id" name="entity_b_id" required>
+          <option value="">— name —</option>
+          {% for c in game.characters %}
+          <option value="{{ c.id }}" data-type="character">{{ c.name }} (character)</option>
+          {% endfor %}
+          {% for n in game.npcs %}
+          <option value="{{ n.id }}" data-type="npc">{{ n.name }} (NPC)</option>
+          {% endfor %}
+          {% for e in game.world_entries %}
+          <option value="{{ e.id }}" data-type="world_entry">{{ e.name }} ({{ e.entry_type.value }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <button type="submit">Add Relationship</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<p style="margin-top:1rem;"><a href="/games/{{ game.id }}">&larr; Dashboard</a></p>
+{% endblock %}

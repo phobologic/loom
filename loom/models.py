@@ -190,6 +190,8 @@ class NotificationType(str, enum.Enum):
     npc_created = "npc_created"
     world_entry_created = "world_entry_created"
     world_entry_suggested = "world_entry_suggested"
+    relationship_created = "relationship_created"
+    relationship_suggested = "relationship_suggested"
 
 
 class WorldEntryType(str, enum.Enum):
@@ -204,6 +206,22 @@ class WorldEntryType(str, enum.Enum):
 
 class WorldEntrySuggestionStatus(str, enum.Enum):
     """Lifecycle status of an AI-suggested world entry."""
+
+    pending = "pending"
+    accepted = "accepted"
+    dismissed = "dismissed"
+
+
+class EntityType(str, enum.Enum):
+    """Type of tracked entity that can participate in a relationship."""
+
+    character = "character"
+    npc = "npc"
+    world_entry = "world_entry"
+
+
+class RelationshipSuggestionStatus(str, enum.Enum):
+    """Lifecycle status of an AI-suggested relationship."""
 
     pending = "pending"
     accepted = "accepted"
@@ -392,6 +410,16 @@ class Game(TimestampMixin, Base):
         back_populates="game",
         cascade="all, delete-orphan",
         order_by="WorldEntrySuggestion.created_at",
+    )
+    relationships: Mapped[list[Relationship]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
+        order_by="Relationship.created_at",
+    )
+    relationship_suggestions: Mapped[list[RelationshipSuggestion]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
+        order_by="RelationshipSuggestion.created_at",
     )
 
 
@@ -671,6 +699,59 @@ class WorldEntry(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="world_entries")
+
+
+class Relationship(TimestampMixin, Base):
+    """A named relationship between any two tracked entities (characters, NPCs, world entries)."""
+
+    __tablename__ = "relationships"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    entity_a_type: Mapped[EntityType] = mapped_column(
+        Enum(EntityType, native_enum=False), nullable=False
+    )
+    entity_a_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    entity_b_type: Mapped[EntityType] = mapped_column(
+        Enum(EntityType, native_enum=False), nullable=False
+    )
+    entity_b_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    game: Mapped[Game] = relationship(back_populates="relationships")
+    created_by: Mapped[User | None] = relationship(foreign_keys=[created_by_id])
+
+
+class RelationshipSuggestion(TimestampMixin, Base):
+    """An AI-generated suggestion for a relationship between two tracked entities."""
+
+    __tablename__ = "relationship_suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    beat_id: Mapped[int | None] = mapped_column(
+        ForeignKey("beats.id", ondelete="SET NULL"), nullable=True
+    )
+    entity_a_type: Mapped[EntityType] = mapped_column(
+        Enum(EntityType, native_enum=False), nullable=False
+    )
+    entity_a_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    entity_b_type: Mapped[EntityType] = mapped_column(
+        Enum(EntityType, native_enum=False), nullable=False
+    )
+    entity_b_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    suggested_label: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[RelationshipSuggestionStatus] = mapped_column(
+        Enum(RelationshipSuggestionStatus, native_enum=False),
+        nullable=False,
+        default=RelationshipSuggestionStatus.pending,
+    )
+
+    game: Mapped[Game] = relationship(back_populates="relationship_suggestions")
 
 
 class WorldEntrySuggestion(TimestampMixin, Base):

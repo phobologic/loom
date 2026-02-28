@@ -29,13 +29,14 @@ from loom.ai.schemas import (
     NPCDetailSuggestions,
     OracleResponse,
     ProseExpansion,
+    RelationshipSuggestionsResponse,
     SynthesisResponse,
     TensionAdjustmentResponse,
     WorldDocumentResponse,
     WorldEntrySuggestionsResponse,
 )
 from loom.config import settings
-from loom.models import AIUsageLog, Character, Game, Scene, WorldEntry
+from loom.models import NPC, AIUsageLog, Character, Game, Scene, WorldEntry
 
 
 async def _log_usage(
@@ -791,3 +792,113 @@ async def suggest_world_entries(
         )
 
     return [(s.entry_type, s.name, s.description, s.reason) for s in response.suggestions]
+
+
+async def suggest_relationships(
+    beat_text: str,
+    characters: list[Character],
+    npcs: list[NPC],
+    world_entries: list[WorldEntry],
+    existing_relationship_labels: list[tuple[str, int, str, int, str]],
+    *,
+    game: Game | None = None,
+    db: AsyncSession | None = None,
+    game_id: int | None = None,
+) -> list[tuple[str, int, str, int, str, str]]:
+    """Scan a canon beat for new relationships between already-tracked entities.
+
+    Args:
+        beat_text: The narrative text of the canon beat.
+        characters: Player characters tracked in this game.
+        npcs: NPCs tracked in this game.
+        world_entries: World entries tracked in this game.
+        existing_relationship_labels: Current relationships as
+            (entity_a_type, entity_a_id, entity_b_type, entity_b_id, label) tuples —
+            used to avoid re-suggesting duplicates.
+        game: Game instance for world document context (optional).
+        db: AsyncSession for writing an AIUsageLog entry (optional).
+        game_id: ID of the game, used in the usage log (optional).
+
+    Returns:
+        A list of (entity_a_type, entity_a_id, entity_b_type, entity_b_id,
+        suggested_label, reason) tuples. Empty list if no new relationships found.
+    """
+    system = (
+        "You are a relationship-tracking assistant for a collaborative tabletop RPG. "
+        "Your job is to identify relationships between already-tracked entities "
+        "(characters, NPCs, and world entries) that are established or strongly implied "
+        "by a canon beat. Only suggest relationships grounded in specific events in the beat. "
+        "Use the exact entity IDs from the catalogue provided — do not invent IDs."
+    )
+
+    prompt_parts: list[str] = []
+
+    if game is not None and game.world_document and game.world_document.content:
+        prompt_parts.append(f"WORLD DOCUMENT:\n{game.world_document.content}")
+
+    # Build entity catalogue
+    catalogue_lines: list[str] = []
+    for c in characters:
+        catalogue_lines.append(f"  character:{c.id} — {c.name}")
+    for n in npcs:
+        catalogue_lines.append(f"  npc:{n.id} — {n.name}")
+    for e in world_entries:
+        catalogue_lines.append(f"  world_entry:{e.id} — {e.name} [{e.entry_type.value}]")
+
+    if catalogue_lines:
+        prompt_parts.append("TRACKED ENTITIES (use these IDs):\n" + "\n".join(catalogue_lines))
+    else:
+        # No entities to relate — skip the call
+        return []
+
+    if existing_relationship_labels:
+        existing_lines = [
+            f"  {a_type}:{a_id} — {label} — {b_type}:{b_id}"
+            for a_type, a_id, b_type, b_id, label in existing_relationship_labels
+        ]
+        prompt_parts.append(
+            "ALREADY TRACKED RELATIONSHIPS (do not re-suggest these):\n" + "\n".join(existing_lines)
+        )
+
+    prompt_parts.append(
+        f"CANON BEAT:\n{beat_text}\n\n"
+        "Identify any new relationships between the tracked entities above that this beat "
+        "establishes or strongly implies. Only use entity IDs from the catalogue. "
+        "Return an empty list if no clear new relationships are supported by the beat."
+    )
+
+    model = settings.ai_model_classification
+    response, usage = await get_provider().generate_structured(
+        system=system,
+        prompt="\n\n".join(prompt_parts),
+        model=model,
+        max_tokens=512,
+        response_model=RelationshipSuggestionsResponse,
+    )
+
+    if db is not None:
+        context_comps = ["beat_text", "entity_catalogue"]
+        if game is not None and game.world_document:
+            context_comps.append("world_document")
+        if existing_relationship_labels:
+            context_comps.append("existing_relationships")
+        await _log_usage(
+            db,
+            feature="suggest_relationships",
+            model=model,
+            usage=usage,
+            context_components=context_comps,
+            game_id=game_id,
+        )
+
+    return [
+        (
+            s.entity_a_type,
+            s.entity_a_id,
+            s.entity_b_type,
+            s.entity_b_id,
+            s.suggested_label,
+            s.reason,
+        )
+        for s in response.suggestions
+    ]

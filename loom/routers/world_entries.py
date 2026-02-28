@@ -16,6 +16,7 @@ from loom.database import AsyncSessionLocal, get_db
 from loom.dependencies import get_current_user
 from loom.models import (
     Beat,
+    EntityType,
     EventType,
     Game,
     GameMember,
@@ -51,6 +52,36 @@ def _find_entry(game: Game, entry_id: int) -> WorldEntry | None:
     return None
 
 
+def _relationships_for_entry(game: Game, entry_id: int) -> list[dict]:
+    """Return enriched relationship dicts where one side is the given world entry."""
+    results = []
+    for r in game.relationships:
+        if r.entity_a_type == EntityType.world_entry and r.entity_a_id == entry_id:
+            other_name = _resolve_entity_name(game, r.entity_b_type.value, r.entity_b_id)
+            results.append({"label": r.label, "other_name": other_name, "rel": r, "direction": "a"})
+        elif r.entity_b_type == EntityType.world_entry and r.entity_b_id == entry_id:
+            other_name = _resolve_entity_name(game, r.entity_a_type.value, r.entity_a_id)
+            results.append({"label": r.label, "other_name": other_name, "rel": r, "direction": "b"})
+    return results
+
+
+def _resolve_entity_name(game: Game, entity_type: str, entity_id: int) -> str:
+    """Return the display name for a (type, id) entity pair."""
+    if entity_type == EntityType.character.value:
+        for c in game.characters:
+            if c.id == entity_id:
+                return c.name
+    elif entity_type == EntityType.npc.value:
+        for n in game.npcs:
+            if n.id == entity_id:
+                return n.name
+    elif entity_type == EntityType.world_entry.value:
+        for e in game.world_entries:
+            if e.id == entity_id:
+                return e.name
+    return f"Unknown ({entity_type}:{entity_id})"
+
+
 def _find_suggestion(game: Game, suggestion_id: int) -> WorldEntrySuggestion | None:
     """Return the pending WorldEntrySuggestion with suggestion_id in game, or None."""
     for s in game.world_entry_suggestions:
@@ -60,14 +91,17 @@ def _find_suggestion(game: Game, suggestion_id: int) -> WorldEntrySuggestion | N
 
 
 async def _load_game_with_entries(game_id: int, db: AsyncSession) -> Game | None:
-    """Load a game with members, world entries, and pending suggestions eager-loaded."""
+    """Load a game with members, world entries, relationships, and pending suggestions eager-loaded."""
     result = await db.execute(
         select(Game)
         .where(Game.id == game_id)
         .options(
             selectinload(Game.members),
+            selectinload(Game.characters),
+            selectinload(Game.npcs),
             selectinload(Game.world_entries),
             selectinload(Game.world_entry_suggestions),
+            selectinload(Game.relationships),
         )
     )
     return result.scalar_one_or_none()
@@ -183,6 +217,8 @@ async def world_entries_page(
         s for s in game.world_entry_suggestions if s.status == WorldEntrySuggestionStatus.pending
     ]
 
+    entry_relationships = {e.id: _relationships_for_entry(game, e.id) for e in game.world_entries}
+
     return templates.TemplateResponse(
         request,
         "world_entries.html",
@@ -194,6 +230,7 @@ async def world_entries_page(
             "entry_types": list(WorldEntryType),
             "editing": None,
             "pending_suggestions": pending_suggestions,
+            "entry_relationships": entry_relationships,
         },
     )
 
@@ -362,6 +399,8 @@ async def edit_world_entry_page(
         s for s in game.world_entry_suggestions if s.status == WorldEntrySuggestionStatus.pending
     ]
 
+    entry_relationships = {e.id: _relationships_for_entry(game, e.id) for e in game.world_entries}
+
     return templates.TemplateResponse(
         request,
         "world_entries.html",
@@ -373,6 +412,7 @@ async def edit_world_entry_page(
             "entry_types": list(WorldEntryType),
             "editing": entry,
             "pending_suggestions": pending_suggestions,
+            "entry_relationships": entry_relationships,
         },
     )
 

@@ -17,11 +17,13 @@ from loom.dependencies import get_current_user
 from loom.models import (
     NPC,
     Beat,
+    EntityType,
     EventType,
     Game,
     GameMember,
     GameStatus,
     NotificationType,
+    Relationship,
     User,
 )
 from loom.notifications import notify_game_members
@@ -40,6 +42,36 @@ def _find_membership(game: Game, user_id: int) -> GameMember | None:
     return None
 
 
+def _relationships_for_npc(game: Game, npc_id: int) -> list[dict]:
+    """Return enriched relationship dicts where one side is the given NPC."""
+    results = []
+    for r in game.relationships:
+        if r.entity_a_type == EntityType.npc and r.entity_a_id == npc_id:
+            other_name = _resolve_entity_name(game, r.entity_b_type.value, r.entity_b_id)
+            results.append({"label": r.label, "other_name": other_name, "rel": r, "direction": "a"})
+        elif r.entity_b_type == EntityType.npc and r.entity_b_id == npc_id:
+            other_name = _resolve_entity_name(game, r.entity_a_type.value, r.entity_a_id)
+            results.append({"label": r.label, "other_name": other_name, "rel": r, "direction": "b"})
+    return results
+
+
+def _resolve_entity_name(game: Game, entity_type: str, entity_id: int) -> str:
+    """Return the display name for a (type, id) entity pair."""
+    if entity_type == EntityType.character.value:
+        for c in game.characters:
+            if c.id == entity_id:
+                return c.name
+    elif entity_type == EntityType.npc.value:
+        for n in game.npcs:
+            if n.id == entity_id:
+                return n.name
+    elif entity_type == EntityType.world_entry.value:
+        for e in game.world_entries:
+            if e.id == entity_id:
+                return e.name
+    return f"Unknown ({entity_type}:{entity_id})"
+
+
 def _find_npc(game: Game, npc_id: int) -> NPC | None:
     """Return the NPC with npc_id in game, or None."""
     for n in game.npcs:
@@ -49,13 +81,16 @@ def _find_npc(game: Game, npc_id: int) -> NPC | None:
 
 
 async def _load_game_with_npcs(game_id: int, db: AsyncSession) -> Game | None:
-    """Load a game with members and NPCs eager-loaded."""
+    """Load a game with members, NPCs, and relationships eager-loaded."""
     result = await db.execute(
         select(Game)
         .where(Game.id == game_id)
         .options(
             selectinload(Game.members),
             selectinload(Game.npcs),
+            selectinload(Game.characters),
+            selectinload(Game.world_entries),
+            selectinload(Game.relationships),
         )
     )
     return result.scalar_one_or_none()
@@ -83,6 +118,8 @@ async def npcs_page(
             detail="NPC tracking is not available until Session 0 is complete",
         )
 
+    npc_relationships = {n.id: _relationships_for_npc(game, n.id) for n in game.npcs}
+
     return templates.TemplateResponse(
         request,
         "npcs.html",
@@ -92,6 +129,7 @@ async def npcs_page(
             "current_user": current_user,
             "npcs": game.npcs,
             "editing": None,
+            "npc_relationships": npc_relationships,
         },
     )
 
@@ -167,6 +205,8 @@ async def edit_npc_page(
     if npc is None:
         raise HTTPException(status_code=404, detail="NPC not found")
 
+    npc_relationships = {n.id: _relationships_for_npc(game, n.id) for n in game.npcs}
+
     return templates.TemplateResponse(
         request,
         "npcs.html",
@@ -176,6 +216,7 @@ async def edit_npc_page(
             "current_user": current_user,
             "npcs": game.npcs,
             "editing": npc,
+            "npc_relationships": npc_relationships,
         },
     )
 

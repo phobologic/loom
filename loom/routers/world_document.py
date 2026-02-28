@@ -52,6 +52,7 @@ from loom.models import (
 )
 from loom.notifications import create_notification
 from loom.rendering import templates
+from loom.routers.relationships import _scan_beat_for_relationships
 from loom.routers.world_entries import _scan_beat_for_world_entries
 from loom.voting import (
     activate_act,
@@ -535,6 +536,7 @@ async def cast_vote(
         elif proposal.proposal_type == ProposalType.beat_proposal and proposal.beat is not None:
             proposal.beat.status = BeatStatus.canon
             background_tasks.add_task(_scan_beat_for_world_entries, proposal.beat.id, game_id)
+            background_tasks.add_task(_scan_beat_for_relationships, proposal.beat.id, game_id)
         elif proposal.proposal_type == ProposalType.scene_complete and proposal.scene is not None:
             proposal.scene.status = SceneStatus.complete
             await _create_tension_adjustment_proposal(proposal.scene, game, db)
