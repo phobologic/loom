@@ -1,6 +1,6 @@
 ---
 id: loo-n4jv
-status: in_progress
+status: closed
 deps: [loo-dmw2]
 links: []
 created: 2026-02-27T05:34:16Z

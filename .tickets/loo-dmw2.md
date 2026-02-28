@@ -1,6 +1,6 @@
 ---
 id: loo-dmw2
-status: in_progress
+status: closed
 deps: [loo-va7r]
 links: []
 created: 2026-02-27T05:34:09Z
